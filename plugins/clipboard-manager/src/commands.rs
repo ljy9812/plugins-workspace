@@ -7,7 +7,7 @@ use tauri::{command, image::JsImage, AppHandle, Manager, ResourceId, Runtime, St
 use crate::{Clipboard, Result};
 
 #[command]
-#[cfg(desktop)]
+#[cfg(any(desktop, target_env = "ohos"))]
 pub(crate) async fn write_text<R: Runtime>(
     _app: AppHandle<R>,
     clipboard: State<'_, Clipboard<R>>,
@@ -18,7 +18,7 @@ pub(crate) async fn write_text<R: Runtime>(
 }
 
 #[command]
-#[cfg(not(desktop))]
+#[cfg(all(not(desktop), not(target_env = "ohos")))]
 pub(crate) async fn write_text<R: Runtime>(
     _app: AppHandle<R>,
     clipboard: State<'_, Clipboard<R>>,

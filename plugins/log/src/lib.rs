@@ -606,9 +606,9 @@ impl Builder {
                         );
                     }
                 }),
-                #[cfg(desktop)]
+                #[cfg(any(desktop, target_env = "ohos"))]
                 TargetKind::Stdout => std::io::stdout().into(),
-                #[cfg(desktop)]
+                #[cfg(any(desktop, target_env = "ohos"))]
                 TargetKind::Stderr => std::io::stderr().into(),
                 TargetKind::Folder { path, file_name } => {
                     if !path.exists() {
