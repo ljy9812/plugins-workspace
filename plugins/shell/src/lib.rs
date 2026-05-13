@@ -36,7 +36,7 @@ mod scope_entry;
 pub use error::Error;
 type Result<T> = std::result::Result<T, Error>;
 
-#[cfg(mobile)]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 use tauri::plugin::PluginHandle;
 #[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "app.tauri.shell";
@@ -48,7 +48,7 @@ type ChildStore = Arc<Mutex<HashMap<u32, CommandChild>>>;
 pub struct Shell<R: Runtime> {
     #[allow(dead_code)]
     app: AppHandle<R>,
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     mobile_plugin_handle: PluginHandle<R>,
     open_scope: scope::OpenScope,
     children: ChildStore,
@@ -71,7 +71,7 @@ impl<R: Runtime> Shell<R> {
     /// Open a (url) path with a default or specific browser opening program.
     ///
     /// See [`crate::open::open`] for how it handles security-related measures.
-    #[cfg(desktop)]
+    #[cfg(any(desktop, target_env = "ohos"))]
     #[deprecated(since = "2.1.0", note = "Use tauri-plugin-opener instead.")]
     #[allow(deprecated)]
     pub fn open(&self, path: impl Into<String>, with: Option<open::Program>) -> Result<()> {
@@ -81,7 +81,7 @@ impl<R: Runtime> Shell<R> {
     /// Open a (url) path with a default or specific browser opening program.
     ///
     /// See [`crate::open::open`] for how it handles security-related measures.
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     #[deprecated(since = "2.1.0", note = "Use tauri-plugin-opener instead.")]
     pub fn open(&self, path: impl Into<String>, _with: Option<open::Program>) -> Result<()> {
         self.mobile_plugin_handle
@@ -124,7 +124,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
                 children: Default::default(),
                 open_scope: open_scope(&config.open),
 
-                #[cfg(mobile)]
+                #[cfg(any(target_os = "android", target_os = "ios"))]
                 mobile_plugin_handle: handle,
             });
             Ok(())

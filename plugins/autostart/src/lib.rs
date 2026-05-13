@@ -211,7 +211,7 @@ impl Builder {
                     builder.set_app_path(&app_path);
                 }
 
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
                 if let Some(appimage) = app
                     .env()
                     .appimage
@@ -221,6 +221,9 @@ impl Builder {
                 } else {
                     builder.set_app_path(&current_exe.display().to_string());
                 }
+
+                #[cfg(target_env = "ohos")]
+                builder.set_app_path(&current_exe.display().to_string());
 
                 app.manage(AutoLaunchManager(
                     builder.build().map_err(|e| e.to_string())?,
