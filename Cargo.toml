@@ -44,3 +44,5 @@ opt-level = "s"
 # Remove this section once the OHOS changes are merged and published to crates.io.
 [patch.crates-io]
 tauri-plugin = { git = "https://github.com/Eulogizethesun/tauri", branch = "ohdev" }
+openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev" }
+openharmony-ability-derive = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev" }

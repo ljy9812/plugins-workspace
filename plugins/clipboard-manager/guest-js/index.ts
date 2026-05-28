@@ -9,7 +9,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
-import { Image, transformImage } from '@tauri-apps/api/image'
+import { Image } from '@tauri-apps/api/image'
 
 /**
  * Writes plain text to the clipboard.
@@ -53,6 +53,7 @@ async function readText(): Promise<string> {
  * #### Platform-specific
  *
  * - **Android / iOS:** Not supported.
+ * - **HarmonyOS (OHOS):** Supported via ArkTS PixelMap bridge.
  *
  * @example
  * ```typescript
@@ -74,8 +75,24 @@ async function readText(): Promise<string> {
 async function writeImage(
   image: string | Image | Uint8Array | ArrayBuffer | number[]
 ): Promise<void> {
+  // Inline duck-type transformation instead of using transformImage().
+  // Vite/Rolldown may bundle @tauri-apps/api/image into multiple chunks with
+  // separate Image class definitions. When clipboard-manager's chunk has its
+  // own Image class, transformImage's instanceof check fails for Image objects
+  // created in a different chunk. Duck-typing (typeof .rid === 'number')
+  // avoids this cross-chunk class identity problem and correctly extracts the
+  // resource ID for Image instances regardless of bundling layout.
+  interface RidHolder { rid: number }
+  const transformed: string | number | Image | Uint8Array | ArrayBuffer | number[] | null =
+    image == null
+      ? null
+      : typeof image === 'string'
+        ? image
+        : typeof (image as RidHolder).rid === 'number'
+          ? (image as RidHolder).rid
+          : image
   await invoke('plugin:clipboard-manager|write_image', {
-    image: transformImage(image)
+    image: transformed
   })
 }
 
@@ -85,6 +102,7 @@ async function writeImage(
  * #### Platform-specific
  *
  * - **Android / iOS:** Not supported.
+ * - **HarmonyOS (OHOS):** Not supported (write only).
  *
  * @example
  * ```typescript

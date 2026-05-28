@@ -19,6 +19,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "partial", notes = "Only plain-text content support" }
 ios = { level = "partial", notes = "Only plain-text content support" }
+ohos = { level = "partial", notes = "write_image only; write_text/read_text/etc. not yet supported" }
 
 
 [build-dependencies]
@@ -34,5 +35,8 @@ thiserror = { workspace = true }
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri = { workspace = true, features = ["wry"] }
 
-[target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"))".dependencies]
+[target."cfg(all(any(target_os = \"macos\", windows, target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"), not(target_env = \"ohos\")))".dependencies]
 arboard = { version = "3", features = ["wayland-data-control"] }
+
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev", features = ["clipboard"] }
