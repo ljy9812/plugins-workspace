@@ -23,7 +23,6 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "partial", notes = "Does not support folder picker" }
 ios = { level = "partial", notes = "Does not support folder picker" }
-openharmony = { level = "partial", notes = "Does not support folder picker" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
@@ -43,10 +42,7 @@ tauri-plugin-fs = { path = "../fs", version = "2.5.1" }
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri = { workspace = true, features = ["wry"] }
 
-[target.'cfg(target_env = "ohos")'.dependencies]
-tauri = { workspace = true, features = ["wry"] }
-
-[target."cfg(all(any(target_os = \"macos\", windows, target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"), not(target_env = \"ohos\")))".dependencies]
+[target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"))".dependencies]
 rfd = { version = "0.16", default-features = false, features = [
   "common-controls-v6",
 ] }
