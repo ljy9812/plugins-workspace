@@ -1,5 +1,9 @@
 # Changelog
 
+## \[Unreleased]
+
+- Added OpenHarmony (OHOS) backend. `check()` queries AppGallery `updateManager.checkAppUpdate()` (pure metadata, no dialog). `downloadAndInstall()` triggers the system `showUpdateDialog()`. `download()` and `install()` return `UnsupportedPlatform`. Requires `ohos.permission.GET_BUNDLE_INFO` in `module.json5`.
+
 ## \[2.10.1]
 
 - [`31ab6f8d`](https://github.com/tauri-apps/plugins-workspace/commit/31ab6f8d2466d86c80b1d70510c0400ce2cdcb0a) ([#3285](https://github.com/tauri-apps/plugins-workspace/pull/3285) by [@hrzlgnm](https://github.com/tauri-apps/plugins-workspace/../../hrzlgnm)) fix: preserve file extension of updater package, otherwise users may get confused when presented with a sudo dialog suggesting to install a file with the extension `.rpm` using `dpkg -i`

@@ -4,31 +4,49 @@
 
 //! In-app updates for Tauri applications.
 //!
-//! - Supported platforms: Windows, Linux and macOS.crypted database and secure runtime.
+//! - Supported platforms: Windows, Linux and macOS. OpenHarmony (via AppGallery).
 
 #![doc(
     html_logo_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png",
     html_favicon_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png"
 )]
 
+// ── Desktop-only imports ─────────────────────────────────────────────
+#[cfg(not(target_env = "ohos"))]
 use std::{ffi::OsString, sync::Arc};
-
+#[cfg(not(target_env = "ohos"))]
 use http::{HeaderMap, HeaderName, HeaderValue};
+#[cfg(not(target_env = "ohos"))]
 use semver::Version;
+
 use tauri::{
     plugin::{Builder as PluginBuilder, TauriPlugin},
-    Manager, Runtime,
+    Runtime,
 };
+#[cfg(not(target_env = "ohos"))]
+use tauri::Manager;
 
+// ── Module declarations ──────────────────────────────────────────────
+// Desktop: the original HTTP/manifest-based updater (untouched).
+#[cfg(not(target_env = "ohos"))]
 mod commands;
 mod config;
 mod error;
+#[cfg(not(target_env = "ohos"))]
 mod updater;
 
+// OpenHarmony: AppGallery-backed updater.
+#[cfg(target_env = "ohos")]
+mod ohos;
+
+// ── Public re-exports ────────────────────────────────────────────────
 pub use config::Config;
 pub use error::{Error, Result};
+#[cfg(not(target_env = "ohos"))]
 pub use updater::*;
 
+// ── Desktop-only: UpdaterExt trait + impl ────────────────────────────
+#[cfg(not(target_env = "ohos"))]
 /// Extensions to [`tauri::App`], [`tauri::AppHandle`], [`tauri::WebviewWindow`], [`tauri::Webview`] and [`tauri::Window`] to access the updater APIs.
 pub trait UpdaterExt<R: Runtime> {
     /// Gets the updater builder to build and updater
@@ -67,7 +85,8 @@ pub trait UpdaterExt<R: Runtime> {
     fn updater(&self) -> Result<Updater>;
 }
 
-impl<R: Runtime, T: Manager<R>> UpdaterExt<R> for T {
+#[cfg(not(target_env = "ohos"))]
+impl<R: Runtime, T: tauri::Manager<R>> UpdaterExt<R> for T {
     fn updater_builder(&self) -> UpdaterBuilder {
         let app = self.app_handle();
         let UpdaterState {
@@ -117,6 +136,8 @@ impl<R: Runtime, T: Manager<R>> UpdaterExt<R> for T {
     }
 }
 
+// ── Desktop-only: internal state ─────────────────────────────────────
+#[cfg(not(target_env = "ohos"))]
 struct UpdaterState {
     target: Option<String>,
     config: Config,
@@ -124,12 +145,18 @@ struct UpdaterState {
     headers: HeaderMap,
 }
 
+// ── Plugin Builder (cross-platform public API) ───────────────────────
 #[derive(Default)]
 pub struct Builder {
+    #[cfg(not(target_env = "ohos"))]
     target: Option<String>,
+    #[cfg(not(target_env = "ohos"))]
     pubkey: Option<String>,
+    #[cfg(not(target_env = "ohos"))]
     installer_args: Vec<OsString>,
+    #[cfg(not(target_env = "ohos"))]
     headers: HeaderMap,
+    #[cfg(not(target_env = "ohos"))]
     default_version_comparator: Option<VersionComparator>,
 }
 
@@ -138,17 +165,20 @@ impl Builder {
         Self::default()
     }
 
+    #[cfg(not(target_env = "ohos"))]
     pub fn target(mut self, target: impl Into<String>) -> Self {
         self.target.replace(target.into());
         self
     }
 
+    #[cfg(not(target_env = "ohos"))]
     pub fn pubkey<S: Into<String>>(mut self, pubkey: S) -> Self {
         self.pubkey.replace(pubkey.into());
         self
     }
 
     /// Adds an additional argument to pass to the Windows installer.
+    #[cfg(not(target_env = "ohos"))]
     pub fn installer_args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -159,6 +189,7 @@ impl Builder {
     }
 
     /// Adds multiple additional arguments to pass to the Windows installer.
+    #[cfg(not(target_env = "ohos"))]
     pub fn installer_arg<S>(mut self, arg: S) -> Self
     where
         S: Into<OsString>,
@@ -171,11 +202,13 @@ impl Builder {
     ///
     /// Note: this only removes the additional arguments added through [`Self::installer_args`],
     /// not the ones managed by us (e.g. `/UPDATER` flag passed to the NSIS installer)
+    #[cfg(not(target_env = "ohos"))]
     pub fn clear_installer_args(mut self) -> Self {
         self.installer_args.clear();
         self
     }
 
+    #[cfg(not(target_env = "ohos"))]
     pub fn header<K, V>(mut self, key: K, value: V) -> Result<Self>
     where
         HeaderName: TryFrom<K>,
@@ -191,11 +224,13 @@ impl Builder {
         Ok(self)
     }
 
+    #[cfg(not(target_env = "ohos"))]
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         self.headers = headers;
         self
     }
 
+    #[cfg(not(target_env = "ohos"))]
     pub fn default_version_comparator<
         F: Fn(Version, RemoteRelease) -> bool + Send + Sync + 'static,
     >(
@@ -206,6 +241,8 @@ impl Builder {
         self
     }
 
+    // ── Desktop build: registers commands + sets up UpdaterState ─────
+    #[cfg(not(target_env = "ohos"))]
     pub fn build<R: Runtime>(self) -> TauriPlugin<R, Config> {
         let pubkey = self.pubkey;
         let target = self.target;
@@ -234,6 +271,19 @@ impl Builder {
                 commands::download,
                 commands::install,
                 commands::download_and_install,
+            ])
+            .build()
+    }
+
+    // ── OHOS build: registers AppGallery-backed commands only ────────
+    #[cfg(target_env = "ohos")]
+    pub fn build<R: Runtime>(self) -> TauriPlugin<R, Config> {
+        PluginBuilder::<R, Config>::new("updater")
+            .invoke_handler(tauri::generate_handler![
+                ohos::check,
+                ohos::download,
+                ohos::install,
+                ohos::download_and_install,
             ])
             .build()
     }

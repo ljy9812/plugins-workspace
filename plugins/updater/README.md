@@ -9,6 +9,7 @@ In-app updates for Tauri applications.
 | macOS    | ✓         |
 | Android  | x         |
 | iOS      | x         |
+| OpenHarmony | ✓ (AppGallery) |
 
 ## Install
 
@@ -78,6 +79,24 @@ Note that for these APIs to work you have to properly configure the updater firs
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
+
+## OpenHarmony (OHOS) Notes
+
+On OpenHarmony, updates are handled through the system AppGallery — there is no HTTP/manifest-based update mechanism.
+
+| API | Behavior |
+| --- | -------- |
+| `check()` | Pure query via `updateManager.checkAppUpdate()`. No dialog shown. Returns `null` if no update, or an `Update` object with metadata. |
+| `downloadAndInstall()` | Triggers `updateManager.showUpdateDialog()` — the system dialog drives the entire download and install flow. |
+| `download()` | Returns `UnsupportedPlatform` error. Use `downloadAndInstall()` instead. |
+| `install()` | Returns `UnsupportedPlatform` error. Use `downloadAndInstall()` instead. |
+
+**Important notes:**
+
+- `body` and `date` fields are always `null` on OHOS — the AppGallery API does not expose update notes or release dates.
+- On SDK 12 / API < 20, `CheckUpdateResult.versionName` is not available, so the `version` field will be `"unknown"`. Upgrade to API 20+ for proper version reporting.
+- The `ohos.permission.GET_BUNDLE_INFO` permission is required (for `bundleManager.getBundleInfoForSelf`). It is auto-added to the `module.json5` template by `tauri init`; for existing projects, add it manually.
+- `check()` is side-effect free — it does not show any UI. Use `downloadAndInstall()` to present the system update dialog to the user.
 
 ## Partners
 

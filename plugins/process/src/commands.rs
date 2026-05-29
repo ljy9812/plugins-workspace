@@ -4,12 +4,13 @@
 
 use tauri::{AppHandle, Runtime};
 
-#[tauri::command]
-pub fn exit<R: Runtime>(app: AppHandle<R>, code: i32) {
-    app.exit(code)
-}
-
+#[cfg(not(target_env = "ohos"))]
 #[tauri::command]
 pub fn restart<R: Runtime>(app: AppHandle<R>) {
     app.request_restart()
+}
+
+#[tauri::command]
+pub fn exit<R: Runtime>(app: AppHandle<R>, code: i32) {
+    app.exit(code)
 }
