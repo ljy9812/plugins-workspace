@@ -16,9 +16,9 @@ use crate::{
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum OpenResponse {
-    #[cfg(all(desktop, not(target_env = "ohos")))]
+    #[cfg(desktop)]
     Folders(Option<Vec<FilePath>>),
-    #[cfg(all(desktop, not(target_env = "ohos")))]
+    #[cfg(desktop)]
     Folder(Option<FilePath>),
     Files(Option<Vec<FilePath>>),
     File(Option<FilePath>),
@@ -52,7 +52,7 @@ pub struct OpenDialogOptions {
     /// If [`Self::directory`] is true, indicates that it will be read recursively later.
     /// Defines whether subdirectories will be allowed on the scope or not.
     #[serde(default)]
-    #[cfg_attr(any(mobile, target_env = "ohos"), allow(dead_code))]
+    #[cfg_attr(mobile, allow(dead_code))]
     recursive: bool,
     /// Whether to allow creating directories in the dialog **macOS Only**
     can_create_directories: Option<bool>,
@@ -65,14 +65,14 @@ pub struct OpenDialogOptions {
     picker_mode: Option<PickerMode>,
     /// The file access mode of the dialog.
     #[serde(default)]
-    #[cfg_attr(any(mobile, target_env = "ohos"), allow(dead_code))]
+    #[cfg_attr(mobile, allow(dead_code))]
     file_access_mode: Option<FileAccessMode>,
 }
 
 /// The options for the save dialog API.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(any(mobile, target_env = "ohos"), allow(dead_code))]
+#[cfg_attr(mobile, allow(dead_code))]
 pub struct SaveDialogOptions {
     /// The title of the dialog window.
     title: Option<String>,
@@ -85,7 +85,7 @@ pub struct SaveDialogOptions {
     can_create_directories: Option<bool>,
 }
 
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(mobile)]
 fn set_default_path<R: Runtime>(
     mut dialog_builder: FileDialogBuilder<R>,
     default_path: PathBuf,
@@ -96,7 +96,7 @@ fn set_default_path<R: Runtime>(
     dialog_builder
 }
 
-#[cfg(all(desktop, not(target_env = "ohos")))]
+#[cfg(desktop)]
 fn set_default_path<R: Runtime>(
     mut dialog_builder: FileDialogBuilder<R>,
     default_path: PathBuf,
@@ -124,7 +124,6 @@ pub(crate) async fn open<R: Runtime>(
     dialog: State<'_, Dialog<R>>,
     options: OpenDialogOptions,
 ) -> Result<OpenResponse> {
-    log::info!("[dialog::open] command called, directory={}, multiple={}", options.directory, options.multiple);
     let mut dialog_builder = dialog.file();
     #[cfg(any(windows, target_os = "macos"))]
     {
@@ -151,7 +150,7 @@ pub(crate) async fn open<R: Runtime>(
     }
 
     let res = if options.directory {
-        #[cfg(all(desktop, not(target_env = "ohos")))]
+        #[cfg(desktop)]
         {
             let tauri_scope = window.state::<tauri::scope::Scopes>();
 
@@ -183,7 +182,7 @@ pub(crate) async fn open<R: Runtime>(
                 OpenResponse::Folder(folder.map(|p| p.simplified()))
             }
         }
-        #[cfg(any(mobile, target_env = "ohos"))]
+        #[cfg(mobile)]
         return Err(crate::Error::FolderPickerNotImplemented);
     } else if options.multiple {
         let tauri_scope = window.state::<tauri::scope::Scopes>();
@@ -226,7 +225,7 @@ pub(crate) async fn save<R: Runtime>(
     options: SaveDialogOptions,
 ) -> Result<Option<FilePath>> {
     let mut dialog_builder = dialog.file();
-    #[cfg(all(desktop, not(target_env = "ohos")))]
+    #[cfg(desktop)]
     {
         dialog_builder = dialog_builder.set_parent(&window);
     }
@@ -278,7 +277,7 @@ pub(crate) async fn message<R: Runtime>(
         builder = builder.title(title);
     }
 
-    #[cfg(all(desktop, not(target_env = "ohos")))]
+    #[cfg(desktop)]
     {
         builder = builder.parent(&window);
     }
