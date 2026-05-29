@@ -21,3 +21,4 @@ tauri-plugin = { workspace = true, features = ["build"] }
 
 [dependencies]
 tauri = { workspace = true }
+log = { workspace = true }

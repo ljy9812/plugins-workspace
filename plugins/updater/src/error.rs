@@ -89,6 +89,8 @@ pub enum Error {
     /// The configured updater endpoint must use a secure protocol like `https`
     #[error("The configured updater endpoint must use a secure protocol like `https`.")]
     InsecureTransportProtocol,
+    #[error("This operation is not supported on the current platform")]
+    UnsupportedPlatform,
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
 }

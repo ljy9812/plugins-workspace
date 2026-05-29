@@ -1,5 +1,9 @@
 # Changelog
 
+## \[Unreleased]
+
+- Added OpenHarmony (OHOS) backend for `relaunch()`. Delegates to `AppHandle::request_restart()` which calls `ApplicationContext.restartApp(want)` on the ArkTS side. The process is hard-killed (no `onDestroy` callback).
+
 ## \[2.3.1]
 
 - [`93426f85`](https://github.com/tauri-apps/plugins-workspace/commit/93426f85120f49beb9f40222bff45185a32d54a9) Fixed an issue that caused docs.rs builds to fail. No user facing changes.
