@@ -23,9 +23,9 @@ use std::{
 pub use models::*;
 
 pub use tauri_plugin_fs::FilePath;
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 mod desktop;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 mod mobile;
 
 mod commands;
@@ -34,14 +34,14 @@ mod models;
 
 pub use error::{Error, Result};
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 use desktop::*;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 use mobile::*;
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 pub use desktop::Dialog;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub use mobile::Dialog;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,11 +61,11 @@ pub enum FileAccessMode {
 }
 
 pub(crate) const OK: &str = "Ok";
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub(crate) const CANCEL: &str = "Cancel";
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub(crate) const YES: &str = "Yes";
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub(crate) const NO: &str = "No";
 
 macro_rules! blocking_fn {
@@ -195,16 +195,21 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         builder = builder.js_init_script(include_str!("init-iife.js").to_string());
     }
 
-    builder
-        .invoke_handler(tauri::generate_handler![
+    // On desktop (excluding ohos), register the desktop invoke_handler
+    #[cfg(all(desktop, not(target_env = "ohos")))]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
             commands::open,
             commands::save,
             commands::message,
-        ])
+        ]);
+    }
+
+    builder
         .setup(|app, api| {
-            #[cfg(mobile)]
+            #[cfg(any(mobile, target_env = "ohos"))]
             let dialog = mobile::init(app, api)?;
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_env = "ohos")))]
             let dialog = desktop::init(app, api)?;
             app.manage(dialog);
             Ok(())
@@ -220,12 +225,12 @@ pub struct MessageDialogBuilder<R: Runtime> {
     pub(crate) message: String,
     pub(crate) kind: MessageDialogKind,
     pub(crate) buttons: MessageDialogButtons,
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub(crate) parent: Option<crate::desktop::WindowHandle>,
 }
 
 /// Payload for the message dialog mobile API.
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MessageDialogPayload<'a> {
@@ -249,12 +254,12 @@ impl<R: Runtime> MessageDialogBuilder<R> {
             message: message.into(),
             kind: MessageDialogKind::default(),
             buttons: MessageDialogButtons::default(),
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_env = "ohos")))]
             parent: None,
         }
     }
 
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     pub(crate) fn payload(&self) -> MessageDialogPayload<'_> {
         let (ok_button_label, no_button_label, cancel_button_label) = match &self.buttons {
             MessageDialogButtons::Ok => (Some(OK), None, None),
@@ -286,7 +291,7 @@ impl<R: Runtime> MessageDialogBuilder<R> {
     }
 
     /// Set parent windows explicitly (optional)
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub fn parent<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>(
         mut self,
         parent: &W,
@@ -388,11 +393,11 @@ pub struct FileDialogBuilder<R: Runtime> {
     pub(crate) can_create_directories: Option<bool>,
     pub(crate) picker_mode: Option<PickerMode>,
     pub(crate) file_access_mode: Option<FileAccessMode>,
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub(crate) parent: Option<crate::desktop::WindowHandle>,
 }
 
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FileDialogPayload<'a> {
@@ -418,12 +423,12 @@ impl<R: Runtime> FileDialogBuilder<R> {
             can_create_directories: None,
             picker_mode: None,
             file_access_mode: None,
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_env = "ohos")))]
             parent: None,
         }
     }
 
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     pub(crate) fn payload(&self, multiple: bool) -> FileDialogPayload<'_> {
         FileDialogPayload {
             file_name: &self.file_name,
@@ -459,7 +464,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
     }
 
     /// Sets the parent window of the dialog.
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     #[must_use]
     pub fn set_parent<
         W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle,
@@ -600,7 +605,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
     ///     Ok(())
     ///   });
     /// ```
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub fn pick_folder<F: FnOnce(Option<FilePath>) + Send + 'static>(self, f: F) {
         pick_folder(self, f)
     }
@@ -625,7 +630,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
     ///     Ok(())
     ///   });
     /// ```
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub fn pick_folders<F: FnOnce(Option<Vec<FilePath>>) + Send + 'static>(self, f: F) {
         pick_folders(self, f)
     }
@@ -719,7 +724,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
     ///   // the folder path is `None` if the user closed the dialog
     /// }
     /// ```
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub fn blocking_pick_folder(self) -> Option<FilePath> {
         blocking_fn!(self, pick_folder)
     }
@@ -742,7 +747,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
     ///   // the folder paths value is `None` if the user closed the dialog
     /// }
     /// ```
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     pub fn blocking_pick_folders(self) -> Option<Vec<FilePath>> {
         blocking_fn!(self, pick_folders)
     }
