@@ -9,6 +9,7 @@ fn main() {
         .global_api_script_path("./api-iife.js")
         .android_path("android")
         .ios_path("ios")
+        .ohos_path("openharmony")
         .try_build();
 
     // when building documentation for Android the plugin build result is always Err() and is irrelevant to the crate documentation build
