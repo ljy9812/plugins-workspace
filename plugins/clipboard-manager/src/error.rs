@@ -26,7 +26,7 @@ impl Serialize for Error {
     }
 }
 
-#[cfg(any(desktop, target_env = "ohos"))]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 impl From<arboard::Error> for Error {
     fn from(error: arboard::Error) -> Self {
         Self::Clipboard(error.to_string())

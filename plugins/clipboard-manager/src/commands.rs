@@ -42,12 +42,36 @@ pub(crate) async fn read_text<R: Runtime>(
 #[command]
 pub(crate) async fn write_image<R: Runtime>(
     webview: Webview<R>,
-    clipboard: State<'_, Clipboard<R>>,
+    // unused on OHOS (TSFN bridge), used on desktop
+    #[allow(unused)] clipboard: State<'_, Clipboard<R>>,
     image: JsImage,
 ) -> Result<()> {
-    let resources_table = webview.resources_table();
-    let image = image.into_img(&resources_table)?;
-    clipboard.write_image(&image)
+    // On OHOS, arboard (X11/Wayland clipboard) is unavailable. Instead, use
+    // the TSFN (ThreadsafeFunction) bridge in openharmony-ability to call
+    // ArkTS clipboard_write_image, which uses the OHOS PixelMap API.
+    #[cfg(target_env = "ohos")]
+    {
+        // Extract RGBA data into owned Vec before the .await boundary.
+        // resources_table's MutexGuard is not Send, so it cannot be held
+        // across an async .await point. The block scope drops the guard
+        // before we enter the async TSFN call.
+        let (rgba, width, height) = {
+            let resources_table = webview.resources_table();
+            let img = image.into_img(&resources_table)?;
+            (img.rgba().to_vec(), img.width(), img.height())
+        };
+        openharmony_ability::clipboard::clipboard_write_image(&rgba, width, height)
+            .await
+            .map_err(|e| crate::Error::Clipboard(e.to_string()))?;
+        return Ok(());
+    }
+    // On desktop (Linux/macOS/Windows), use arboard for clipboard access.
+    #[cfg(not(target_env = "ohos"))]
+    {
+        let resources_table = webview.resources_table();
+        let image = image.into_img(&resources_table)?;
+        clipboard.write_image(&image)
+    }
 }
 
 #[command]
