@@ -39,4 +39,4 @@ tauri = { workspace = true, features = ["wry"] }
 arboard = { version = "3", features = ["wayland-data-control"] }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev", features = ["clipboard"] }
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["clipboard"] }
