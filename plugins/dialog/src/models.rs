@@ -78,7 +78,7 @@ pub enum MessageDialogResult {
     Custom(String),
 }
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 impl From<rfd::MessageDialogResult> for MessageDialogResult {
     fn from(result: rfd::MessageDialogResult) -> Self {
         match result {

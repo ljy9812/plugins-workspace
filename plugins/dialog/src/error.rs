@@ -13,10 +13,10 @@ pub enum Error {
     Tauri(#[from] tauri::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     #[error(transparent)]
     PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     #[error("Folder picker is not implemented on mobile")]
     FolderPickerNotImplemented,
     #[error(transparent)]
