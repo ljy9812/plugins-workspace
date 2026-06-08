@@ -15,6 +15,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "none", notes = "" }
 ios = { level = "none", notes = "" }
+ohos = { level = "partial", notes = "enable/disable navigate to system settings; isEnabled requires API 21+" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
@@ -24,4 +25,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(not(target_env = "ohos"))'.dependencies]
 auto-launch = "0.5"
+
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability" }
