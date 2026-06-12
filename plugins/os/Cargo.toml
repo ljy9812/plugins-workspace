@@ -15,6 +15,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "full", notes = "" }
 ios = { level = "full", notes = "" }
+ohos = { level = "partial", notes = "version() returns stub 0.0.0" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
@@ -26,6 +27,8 @@ tauri = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 os_info = "3"
+serialize-to-javascript = "0.1.1"
+
+[target.'cfg(not(target_env = "ohos"))'.dependencies]
 sys-locale = "0.3"
 gethostname = "1.0"
-serialize-to-javascript = "0.1.1"
