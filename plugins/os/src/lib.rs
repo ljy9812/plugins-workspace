@@ -29,6 +29,7 @@ pub enum OsType {
     Macos,
     IOS,
     Android,
+    Ohos,
 }
 
 impl Display for OsType {
@@ -39,28 +40,42 @@ impl Display for OsType {
             Self::Macos => write!(f, "macos"),
             Self::IOS => write!(f, "ios"),
             Self::Android => write!(f, "android"),
+            Self::Ohos => write!(f, "ohos"),
         }
     }
 }
 
 /// Returns a string describing the specific operating system in use, see [std::env::consts::OS].
 pub fn platform() -> &'static str {
+    #[cfg(target_env = "ohos")]
+    return "ohos";
+    #[cfg(not(target_env = "ohos"))]
     std::env::consts::OS
 }
 
 /// Returns the current operating system version.
 pub fn version() -> Version {
+    // TODO(OHOS): Replace with real version from openharmony-ability::version::sdk_api_version()
+    // or OHOS system property. Current MVP returns 0.0.0 as a known limitation.
+    #[cfg(target_env = "ohos")]
+    return Version::Semantic(0, 0, 0);
+    #[cfg(not(target_env = "ohos"))]
     os_info::get().version().clone()
 }
 
 /// Returns the current operating system type.
 pub fn type_() -> OsType {
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
+    #[cfg(target_env = "ohos")]
+    return OsType::Ohos;
+    #[cfg(all(
+        not(target_env = "ohos"),
+        any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
     ))]
     return OsType::Linux;
     #[cfg(target_os = "windows")]
@@ -73,8 +88,13 @@ pub fn type_() -> OsType {
     return OsType::Android;
 }
 
-/// Returns the current operating system family, see [std::env::consts::FAMILY].
+/// Returns the current operating system family.
+/// On OHOS, returns "ohos" since OpenHarmony is not a traditional Unix system,
+/// even though `target_os = "linux"` would otherwise yield "unix".
 pub fn family() -> &'static str {
+    #[cfg(target_env = "ohos")]
+    return "ohos";
+    #[cfg(not(target_env = "ohos"))]
     std::env::consts::FAMILY
 }
 
@@ -90,11 +110,17 @@ pub fn exe_extension() -> &'static str {
 
 /// Returns the current operating system locale with the `BCP-47` language tag. If the locale couldn't be obtained, `None` is returned instead.
 pub fn locale() -> Option<String> {
+    #[cfg(target_env = "ohos")]
+    return None; // TODO(OHOS): implement via openharmony-ability
+    #[cfg(not(target_env = "ohos"))]
     sys_locale::get_locale()
 }
 
 /// Returns the current operating system hostname.
 pub fn hostname() -> String {
+    #[cfg(target_env = "ohos")]
+    return String::from("ohos"); // TODO(OHOS): implement via openharmony-ability
+    #[cfg(not(target_env = "ohos"))]
     gethostname::gethostname().to_string_lossy().to_string()
 }
 
