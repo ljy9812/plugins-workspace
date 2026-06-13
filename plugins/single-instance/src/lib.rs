@@ -15,11 +15,14 @@ use tauri::{plugin::TauriPlugin, AppHandle, Manager, Runtime};
 #[cfg(target_os = "windows")]
 #[path = "platform_impl/windows.rs"]
 mod platform_impl;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 #[path = "platform_impl/linux.rs"]
 mod platform_impl;
 #[cfg(target_os = "macos")]
 #[path = "platform_impl/macos.rs"]
+mod platform_impl;
+#[cfg(target_env = "ohos")]
+#[path = "platform_impl/ohos.rs"]
 mod platform_impl;
 
 #[cfg(feature = "semver")]
@@ -47,7 +50,7 @@ impl<R: Runtime> Default for Builder<R> {
     fn default() -> Self {
         Self {
             callback: Box::new(move |_app, _args, _| {
-                #[cfg(feature = "deep-link")]
+                #[cfg(all(feature = "deep-link", not(target_env = "ohos")))]
                 if let Some(deep_link) = _app.try_state::<tauri_plugin_deep_link::DeepLink<R>>() {
                     deep_link.handle_cli_arguments(_args.iter());
                 }
@@ -69,7 +72,7 @@ impl<R: Runtime> Builder<R> {
         mut f: F,
     ) -> Self {
         self.callback = Box::new(move |app, args, cwd| {
-            #[cfg(feature = "deep-link")]
+            #[cfg(all(feature = "deep-link", not(target_env = "ohos")))]
             if let Some(deep_link) = app.try_state::<tauri_plugin_deep_link::DeepLink<R>>() {
                 deep_link.handle_cli_arguments(args.iter());
             }
@@ -91,7 +94,7 @@ impl<R: Runtime> Builder<R> {
     pub fn build(self) -> TauriPlugin<R> {
         platform_impl::init(
             self.callback,
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
             self.dbus_id,
         )
     }
