@@ -13,6 +13,7 @@ exclude = ["/examples"]
 windows = { level = "full", notes = "" }
 linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
+ohos = { level = "full", notes = "Uses OS singleton + onNewWant" }
 android = { level = "none", notes = "" }
 ios = { level = "none", notes = "" }
 
@@ -37,8 +38,11 @@ features = [
   "Win32_Graphics_Gdi",
 ]
 
-[target."cfg(target_os = \"linux\")".dependencies]
+[target."cfg(all(target_os = \"linux\", not(target_env = \"ohos\")))".dependencies]
 zbus = { workspace = true }
+
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability" }
 
 [features]
 semver = ["dep:semver"]
