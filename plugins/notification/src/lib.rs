@@ -10,9 +10,9 @@
 )]
 
 use serde::Serialize;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 use tauri::plugin::PluginHandle;
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 use tauri::AppHandle;
 use tauri::{
     plugin::{Builder, TauriPlugin},
@@ -22,9 +22,9 @@ use tauri::{
 pub use models::*;
 pub use tauri::plugin::PermissionState;
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 mod desktop;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 mod mobile;
 
 mod commands;
@@ -33,23 +33,26 @@ mod models;
 
 pub use error::{Error, Result};
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 pub use desktop::Notification;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub use mobile::Notification;
+
+#[cfg(any(mobile, target_env = "ohos"))]
+pub use commands::BatchResult;
 
 /// The notification builder.
 #[derive(Debug)]
 pub struct NotificationBuilder<R: Runtime> {
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     app: AppHandle<R>,
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     handle: PluginHandle<R>,
     pub(crate) data: NotificationData,
 }
 
 impl<R: Runtime> NotificationBuilder<R> {
-    #[cfg(desktop)]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
     fn new(app: AppHandle<R>) -> Self {
         Self {
             app,
@@ -57,7 +60,7 @@ impl<R: Runtime> NotificationBuilder<R> {
         }
     }
 
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     fn new(handle: PluginHandle<R>) -> Self {
         Self {
             handle,
@@ -178,9 +181,13 @@ impl<R: Runtime> NotificationBuilder<R> {
 
     /// Adds an extra payload to store in the notification.
     pub fn extra(mut self, key: impl Into<String>, value: impl Serialize) -> Self {
-        self.data
-            .extra
-            .insert(key.into(), serde_json::to_value(value).unwrap());
+        let key = key.into();
+        match serde_json::to_value(value) {
+            Ok(v) => { self.data.extra.insert(key, v); }
+            Err(e) => {
+                log::warn!("NotificationBuilder::extra: failed to serialize value for key '{key}': {e}");
+            }
+        }
         self
     }
 
@@ -224,16 +231,38 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             commands::notify,
             commands::request_permission,
-            commands::is_permission_granted
+            commands::is_permission_granted,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::cancel,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::get_pending,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::remove_active,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::get_active,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::check_permissions,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::show,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::batch,
+            #[cfg(any(mobile, target_env = "ohos"))]
+            commands::register_action_types,
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
+            commands::create_channel,
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
+            commands::delete_channel,
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
+            commands::list_channels,
         ])
         .js_init_script(include_str!("init-iife.js").replace(
             "__TEMPLATE_windows__",
             if cfg!(windows) { "true" } else { "false" },
         ))
         .setup(|app, api| {
-            #[cfg(mobile)]
+            #[cfg(any(mobile, target_env = "ohos"))]
             let notification = mobile::init(app, api)?;
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_env = "ohos")))]
             let notification = desktop::init(app, api)?;
             app.manage(notification);
             Ok(())

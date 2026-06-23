@@ -18,6 +18,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "full", notes = "" }
 ios = { level = "full", notes = "" }
+ohos = { level = "partial", notes = "Basic text/long notifications, permissions, channels via local mapping. Scheduling, actions, attachments not supported." }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
@@ -33,14 +34,14 @@ time = { version = "0.3", features = ["serde", "parsing", "formatting"] }
 url = { version = "2", features = ["serde"] }
 serde_repr = "0.1"
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_env = "ohos"))'.dependencies]
 tauri = { workspace = true, features = ["wry"] }
 
 [target."cfg(windows)".dependencies]
 win7-notifications = { version = "0.4.5", optional = true }
 windows-version = { version = "0.1", optional = true }
 
-[target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"))".dependencies]
+[target."cfg(all(any(target_os = \"macos\", windows, target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"), not(target_env = \"ohos\")))".dependencies]
 notify-rust = "4.11"
 
 [features]

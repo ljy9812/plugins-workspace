@@ -209,7 +209,7 @@ impl Default for NotificationData {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingNotification {
     id: i32,
@@ -236,7 +236,7 @@ impl PendingNotification {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveNotification {
     id: i32,
@@ -307,8 +307,8 @@ impl ActiveNotification {
     }
 }
 
-#[cfg(mobile)]
-#[derive(Debug, Serialize)]
+#[cfg(any(mobile, target_env = "ohos"))]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionType {
     id: String,
@@ -320,8 +320,8 @@ pub struct ActionType {
     hidden_previews_show_subtitle: bool,
 }
 
-#[cfg(mobile)]
-#[derive(Debug, Serialize)]
+#[cfg(any(mobile, target_env = "ohos"))]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Action {
     id: String,
@@ -334,10 +334,10 @@ pub struct Action {
     input_placeholder: Option<String>,
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 pub use android::*;
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 mod android {
     use serde::{Deserialize, Serialize};
     use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -371,12 +371,19 @@ mod android {
     pub struct Channel {
         id: String,
         name: String,
+        #[serde(default)]
         description: Option<String>,
+        #[serde(default)]
         sound: Option<String>,
+        #[serde(default)]
         lights: bool,
+        #[serde(default)]
         light_color: Option<String>,
+        #[serde(default)]
         vibration: bool,
+        #[serde(default)]
         importance: Importance,
+        #[serde(default)]
         visibility: Option<Visibility>,
     }
 
