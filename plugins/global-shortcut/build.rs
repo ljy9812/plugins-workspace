@@ -7,5 +7,6 @@ const COMMANDS: &[&str] = &["register", "unregister", "unregister_all", "is_regi
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)
         .global_api_script_path("./api-iife.js")
+        .ohos_path("openharmony")
         .build();
 }

@@ -15,6 +15,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "none", notes = "" }
 ios = { level = "none", notes = "" }
+openharmony = { level = "partial", notes = "Requires API 14+. Max 2 modifiers. Wearable not supported." }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
@@ -26,5 +27,8 @@ tauri = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 
-[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\", target_env = \"ohos\")))".dependencies]
 global-hotkey = { version = "0.7", features = ["serde"] }
+
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["global_shortcut"] }
