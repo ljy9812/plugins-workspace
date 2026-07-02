@@ -24,12 +24,14 @@ impl Serialize for Error {
     }
 }
 
+#[cfg(not(target_env = "ohos"))]
 impl From<global_hotkey::Error> for Error {
     fn from(value: global_hotkey::Error) -> Self {
         Self::GlobalHotkey(value.to_string())
     }
 }
 
+#[cfg(not(target_env = "ohos"))]
 impl From<global_hotkey::hotkey::HotKeyParseError> for Error {
     fn from(value: global_hotkey::hotkey::HotKeyParseError) -> Self {
         Self::GlobalHotkey(value.to_string())
