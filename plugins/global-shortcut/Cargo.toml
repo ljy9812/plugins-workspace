@@ -31,4 +31,4 @@ thiserror = { workspace = true }
 global-hotkey = { version = "0.7", features = ["serde"] }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["global_shortcut"] }
+openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git", features = ["global_shortcut"] }
