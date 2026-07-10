@@ -18,7 +18,10 @@ const PLUGIN_IDENTIFIER: &str = "app.tauri.notification";
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_notification);
 
-// initializes the Kotlin or Swift plugin classes
+#[cfg(target_env = "ohos")]
+const PLUGIN_IDENTIFIER: &str = "@tauri/plugin-notification";
+
+// initializes the Kotlin, Swift or ArkTS plugin classes
 pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
@@ -27,6 +30,8 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "NotificationPlugin")?;
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_notification)?;
+    #[cfg(target_env = "ohos")]
+    let handle = api.register_ohos_plugin(PLUGIN_IDENTIFIER, "NotificationPlugin")?;
     Ok(Notification(handle))
 }
 
@@ -64,11 +69,20 @@ impl<R: Runtime> Notification<R> {
     }
 
     pub fn register_action_types(&self, types: Vec<ActionType>) -> crate::Result<()> {
-        let mut args = HashMap::new();
-        args.insert("types", types);
-        self.0
-            .run_mobile_plugin("registerActionTypes", args)
-            .map_err(Into::into)
+        #[cfg(target_env = "ohos")]
+        {
+            let _ = types;
+            log::warn!("register_action_types is not supported on OHOS (no-op)");
+            return Ok(());
+        }
+        #[cfg(not(target_env = "ohos"))]
+        {
+            let mut args = HashMap::new();
+            args.insert("types", types);
+            self.0
+                .run_mobile_plugin("registerActionTypes", args)
+                .map_err(Into::into)
+        }
     }
 
     pub fn remove_active(&self, notifications: Vec<i32>) -> crate::Result<()> {
@@ -119,14 +133,14 @@ impl<R: Runtime> Notification<R> {
         self.0.run_mobile_plugin("cancel", ()).map_err(Into::into)
     }
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     pub fn create_channel(&self, channel: Channel) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("createChannel", channel)
             .map_err(Into::into)
     }
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     pub fn delete_channel(&self, id: impl Into<String>) -> crate::Result<()> {
         let mut args = HashMap::new();
         args.insert("id", id.into());
@@ -135,11 +149,23 @@ impl<R: Runtime> Notification<R> {
             .map_err(Into::into)
     }
 
-    #[cfg(target_os = "android")]
-    pub fn list_channels(&self) -> crate::Result<Vec<Channel>> {
+    /// Returns raw JSON from listChannels (used by command layer to avoid
+    /// ACL camelCase/snake_case mismatch). Rust callers should prefer
+    /// `list_channels()` which returns typed `Vec<Channel>`.
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
+    pub fn list_channels_raw(&self) -> crate::Result<serde_json::Value> {
         self.0
             .run_mobile_plugin("listChannels", ())
             .map_err(Into::into)
+    }
+
+    /// Returns typed list of channels. Deserializes from the raw JSON
+    /// returned by the platform plugin.
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
+    pub fn list_channels(&self) -> crate::Result<Vec<Channel>> {
+        let raw = self.list_channels_raw()?;
+        serde_json::from_value(raw)
+            .map_err(|e| crate::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())))
     }
 }
 
