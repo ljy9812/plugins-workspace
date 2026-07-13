@@ -9,6 +9,7 @@ Set your Tauri application as the default handler for an URL.
 | macOS    | ✓         |
 | Android  | ✓         |
 | iOS      | ✓         |
+| OpenHarmony | ✓      |
 
 ## Install
 
@@ -119,6 +120,10 @@ Under `tauri.conf.json > plugins > deep-link`, configure the domains (mobile) an
   }
 }
 ```
+
+### OpenHarmony
+
+On OpenHarmony, the `mobile` domains are used to generate `module.json5` `skills/uris` declarations at build time (static scheme registration via `ohos.want.action.viewData` + `entity.system.browsable`). Runtime `register`/`unregister` are no-op (scheme registration is build-time only). `getCurrent` returns the first-launch URL from `onCreate` `want.uri`; `onOpenUrl` fires on `onNewWant` (app already running).
 
 ## Usage
 

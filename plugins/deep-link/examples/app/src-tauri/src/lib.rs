@@ -10,7 +10,7 @@ fn greet(name: &str) -> String {
     format!("Hello, {name}! You've been greeted from Rust!")
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg_attr(any(mobile, target_env = "ohos"), tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
@@ -34,7 +34,10 @@ pub fn run() {
             // this is useful because AppImages requires additional setup to be available in the system
             // and calling register() makes the deep links immediately available - without any user input
             // additionally, we manually register on Windows on debug builds for development
-            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            #[cfg(any(
+                all(target_os = "linux", not(target_env = "ohos")),
+                all(debug_assertions, windows)
+            ))]
             app.deep_link().register_all()?;
 
             app.deep_link().on_open_url(|event| {

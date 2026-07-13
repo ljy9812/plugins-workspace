@@ -43,6 +43,6 @@ opt-level = "s"
 # Patch tauri-plugin to use the fork with OHOS support (ohos_path API).
 # Remove this section once the OHOS changes are merged and published to crates.io.
 [patch.crates-io]
-tauri-plugin = { git = "https://github.com/Eulogizethesun/tauri", branch = "ohdev" }
+tauri-plugin = { path = "../tauri/crates/tauri-plugin" }
 openharmony-ability = { path = "../openharmony-ability/crates/ability" }
 openharmony-ability-derive = { path = "../openharmony-ability/crates/derive" }

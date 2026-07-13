@@ -18,6 +18,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "partial", notes = "Deep links must be registered in config. Dynamic registration at runtime is not supported." }
 android = { level = "partial", notes = "Deep links must be registered in config. Dynamic registration at runtime is not supported." }
 ios = { level = "partial", notes = "Deep links must be registered in config. Dynamic registration at runtime is not supported." }
+openharmony = { level = "partial", notes = "Runtime events + first-launch get_current + register no-op; scheme registration (Phase 2) pending." }
 
 [build-dependencies]
 serde = { workspace = true }
@@ -34,6 +35,7 @@ serde_json = { workspace = true }
 tauri = { workspace = true }
 tauri-utils = { workspace = true }
 tracing = { workspace = true }
+log = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 
@@ -42,5 +44,8 @@ dunce = "1"
 windows-registry = "0.5"
 windows-result = "0.3"
 
-[target."cfg(target_os = \"linux\")".dependencies]
+[target."cfg(all(target_os = \"linux\", not(target_env = \"ohos\")))".dependencies]
 rust-ini = "0.21"
+
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability" }
