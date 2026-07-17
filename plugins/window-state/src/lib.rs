@@ -70,9 +70,12 @@ struct PluginState {
     pub(crate) state_flags: StateFlags,
     filename: String,
     map_label: Option<Box<LabelMapperFn>>,
+    denylist: HashSet<String>,
+    filter_callback: Option<Box<FilterCallbackFn>>,
+    skip_initial_state: HashSet<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 struct WindowState {
     width: u32,
     height: u32,
@@ -176,6 +179,31 @@ impl<R: Runtime> WindowExt for Window<R> {
         let cache = self.state::<WindowStateCache>();
         let mut c = cache.0.lock().unwrap();
 
+        // OHOS: the window is created by the OS ability (at a default position)
+        // before this plugin's on_window_ready fires. The Moved event from window
+        // creation overwrites the cache (populated from file during setup) with
+        // the default position. Re-read the saved state from the file to restore
+        // the correct position. (Desktop platforms are unaffected: tao controls
+        // window creation, so Moved fires after restore_state, where the
+        // RestoringWindowState lock prevents cache overwrite.)
+        #[cfg(target_env = "ohos")]
+        {
+            if let Ok(app_dir) = self.app_handle().path().app_config_dir() {
+                let state_path = app_dir.join(&plugin_state.filename);
+                if state_path.exists() {
+                    if let Ok(data) = std::fs::read(&state_path) {
+                        if let Ok(file_cache) =
+                            serde_json::from_slice::<HashMap<String, WindowState>>(&data)
+                        {
+                            if let Some(saved) = file_cache.get(label) {
+                                c.insert(label.to_string(), saved.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let mut should_show = true;
 
         if let Some(state) = c
@@ -189,21 +217,11 @@ impl<R: Runtime> WindowExt for Window<R> {
             if flags.contains(StateFlags::POSITION) {
                 let position = (state.x, state.y).into();
                 let size = (state.width, state.height).into();
-                // restore position to saved value if saved monitor exists
-                // otherwise, let the OS decide where to place the window
                 for m in self.available_monitors()? {
                     if m.intersects(position, size) {
                         self.set_position(PhysicalPosition {
-                            x: if state.maximized {
-                                state.prev_x
-                            } else {
-                                state.x
-                            },
-                            y: if state.maximized {
-                                state.prev_y
-                            } else {
-                                state.y
-                            },
+                            x: if state.maximized { state.prev_x } else { state.x },
+                            y: if state.maximized { state.prev_y } else { state.y },
                         })?;
                     }
                 }
@@ -386,6 +404,9 @@ impl Builder {
         let state_flags = self.state_flags;
         let filename = self.filename.unwrap_or_else(|| DEFAULT_FILENAME.into());
         let map_label = self.map_label;
+        let denylist = self.denylist;
+        let filter_callback = self.filter_callback;
+        let skip_initial_state = self.skip_initial_state;
 
         PluginBuilder::new("window-state")
             .invoke_handler(tauri::generate_handler![
@@ -401,6 +422,9 @@ impl Builder {
                     state_flags,
                     filename,
                     map_label,
+                    denylist,
+                    filter_callback,
+                    skip_initial_state,
                 });
                 Ok(())
             })
@@ -413,19 +437,19 @@ impl Builder {
                     .unwrap_or_else(|| window.label());
 
                 // Check deny list names
-                if self.denylist.contains(label) {
+                if plugin_state.denylist.contains(label) {
                     return;
                 }
 
                 // Check deny list callback
-                if let Some(filter_callback) = &self.filter_callback {
+                if let Some(filter_callback) = &plugin_state.filter_callback {
                     // Don't save the state if the callback returns false
                     if !filter_callback(label) {
                         return;
                     }
                 }
 
-                if !self.skip_initial_state.contains(label) {
+                if !plugin_state.skip_initial_state.contains(label) {
                     let _ = window.restore_state(state_flags);
                 }
 
@@ -500,6 +524,46 @@ impl Builder {
                 });
             })
             .on_event(move |app, event| {
+                #[cfg(target_env = "ohos")]
+                {
+                    if let RunEvent::Ready = &event {
+                        // Restore on Ready because on_window_ready does not fire for the
+                        // main window on OHOS (created before the plugin registers).
+                        // Apply the same denylist / filter / skip_initial_state gating as
+                        // on_window_ready so excluded windows (e.g. splash) are not restored.
+                        let windows_to_restore: Vec<_> = {
+                            let plugin_state = app.state::<PluginState>();
+                            app.webview_windows()
+                                .into_iter()
+                                .filter(|(_, window)| {
+                                    let label = plugin_state
+                                        .map_label
+                                        .as_ref()
+                                        .map(|map| map(window.label()))
+                                        .unwrap_or_else(|| window.label());
+                                    if plugin_state.denylist.contains(label) {
+                                        return false;
+                                    }
+                                    if let Some(filter_callback) = &plugin_state.filter_callback {
+                                        if !filter_callback(label) {
+                                            return false;
+                                        }
+                                    }
+                                    !plugin_state.skip_initial_state.contains(label)
+                                })
+                                .map(|(_, w)| w)
+                                .collect()
+                        };
+                        for window in windows_to_restore {
+                            let _ = window.restore_state(state_flags);
+                        }
+                    }
+                    // OHOS: skip auto-save on Exit. The user controls persistence
+                    // via the explicit save_window_state command (Save/Restore button).
+                    // Auto-save on Exit would overwrite the user's explicit save with
+                    // the current (possibly moved) position.
+                }
+                #[cfg(not(target_env = "ohos"))]
                 if let RunEvent::Exit = event {
                     let _ = app.save_window_state(state_flags);
                 }
