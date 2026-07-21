@@ -30,7 +30,7 @@ use serde::{de::Visitor, Deserialize, Deserializer};
 use stronghold::{Error, Result, Stronghold};
 use tauri::{
     plugin::{Builder as PluginBuilder, TauriPlugin},
-    Manager, Runtime, State,
+    AppHandle, Manager, Runtime, State,
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -236,7 +236,8 @@ impl From<ProcedureDto> for StrongholdProcedure {
 }
 
 #[tauri::command]
-async fn initialize(
+async fn initialize<R: Runtime>(
+    app: AppHandle<R>,
     collection: State<'_, StrongholdCollection>,
     hash_function: State<'_, PasswordHashFunction>,
     snapshot_path: PathBuf,
@@ -244,7 +245,33 @@ async fn initialize(
 ) -> Result<()> {
     let hash = (hash_function.0)(&password);
     password.zeroize();
-    let stronghold = Stronghold::new(snapshot_path.clone(), hash)?;
+
+    // On OHOS the process working directory is "/" (owned by root, not writable
+    // by the app), so a relative snapshot path fails to write with
+    // `Permission denied (os error 13)`. Resolve relative paths against AppData,
+    // mirroring the store plugin's `resolve_store_path`. Absolute paths are
+    // returned unchanged by `resolve`. The collection stays keyed by the path as
+    // received from the client; the [`Stronghold`] struct holds the resolved
+    // path internally, so `save`/`destroy` (which look up by the received path)
+    // perform snapshot I/O at the resolved location without needing changes.
+    #[cfg(target_env = "ohos")]
+    let snapshot_io_path = app
+        .path()
+        .resolve(&snapshot_path, tauri::path::BaseDirectory::AppData)
+        .unwrap_or_else(|e| {
+            log::warn!(
+                "[stronghold] OHOS path resolve failed for {:?}: {} (falling back to literal path — relative paths will likely fail since CWD is /)",
+                snapshot_path,
+                e
+            );
+            snapshot_path.clone()
+        });
+    #[cfg(not(target_env = "ohos"))]
+    let _ = &app; // `app` is only used for path resolution on OHOS
+    #[cfg(not(target_env = "ohos"))]
+    let snapshot_io_path = snapshot_path.clone();
+
+    let stronghold = Stronghold::new(snapshot_io_path, hash)?;
 
     collection
         .0

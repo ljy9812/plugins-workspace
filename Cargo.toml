@@ -46,3 +46,4 @@ opt-level = "s"
 tauri-plugin = { path = "../tauri/crates/tauri-plugin" }
 openharmony-ability = { path = "../openharmony-ability/crates/ability" }
 openharmony-ability-derive = { path = "../openharmony-ability/crates/derive" }
+stronghold-runtime = { path = "plugins/stronghold/vendor/stronghold-runtime" }

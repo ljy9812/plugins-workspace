@@ -150,6 +150,14 @@ PRs accepted. Please make sure to read the Contributing Guide before making a pu
 
 For the complete list of sponsors please visit our [website](https://tauri.app#sponsors) and [Open Collective](https://opencollective.com/tauri).
 
+## OHOS
+
+On OHOS (`target_env = "ohos"`), the `RunEvent::Exit` save path is hardened against main-thread appfreeze: the stores map read uses `try_read()` and each store save uses `save_or_skip()` (which `try_lock`s `StoreInner`). On lock contention during exit (e.g. an in-flight auto-save debounce task holding the mutex), the last flush is skipped with a `tracing::warn!` instead of blocking the main thread.
+
+Applications should rely on auto-save debounce and the `Drop` fallback for durability; the exit-time skip only occurs under the rare "process exit + lock contention" double condition. Other platforms are unchanged — `on_event` keeps the blocking `read().unwrap()` / `save()` semantics.
+
+> Note: this version of the plugin has no file-watch (`notify`) mechanism; the hardening targets the `RunEvent::Exit` lock contention path only.
+
 ## License
 
 Code: (c) 2015 - Present - The Tauri Programme within The Commons Conservancy.

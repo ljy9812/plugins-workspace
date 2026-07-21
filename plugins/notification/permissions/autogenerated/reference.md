@@ -24,7 +24,6 @@ It allows all notification related features.
 - `allow-list-channels`
 - `allow-delete-channel`
 - `allow-create-channel`
-- `allow-permission-state`
 
 ## Permission Table
 
@@ -291,32 +290,6 @@ Enables the notify command without any pre-configured scope.
 <td>
 
 Denies the notify command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:allow-permission-state`
-
-</td>
-<td>
-
-Enables the permission_state command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:deny-permission-state`
-
-</td>
-<td>
-
-Denies the permission_state command without any pre-configured scope.
 
 </td>
 </tr>

@@ -162,6 +162,36 @@ PRs accepted. Please make sure to read the Contributing Guide before making a pu
 
 For the complete list of sponsors please visit our [website](https://tauri.app#sponsors) and [Open Collective](https://opencollective.com/tauri).
 
+## OHOS Build
+
+Stronghold depends on `libsodium-sys-stable`, whose build script runs `./configure` to compile libsodium from source. On Windows cross-compiling to OHOS, `./configure` fails (os error 193). Prebuilt libsodium is required.
+
+### Prerequisites
+
+- `OHOS_NDK_HOME` set to the OHOS NDK directory (contains `native/llvm/bin/clang` and `native/sysroot`)
+
+### Steps
+
+1. Build libsodium for OHOS:
+   ```bash
+   cd plugins/stronghold
+   bash scripts/build-libsodium-ohos.sh aarch64-linux-ohos
+   ```
+   This produces `native/ohos/aarch64-linux-ohos/lib/libsodium.a` and generates `scripts/env.sh`.
+
+2. Source the environment before building:
+   ```bash
+   source scripts/env.sh
+   # Sets SODIUM_LIB_DIR so libsodium-sys-stable skips ./configure
+   ```
+
+3. Build stronghold:
+   ```bash
+   cargo build --target aarch64-linux-ohos -p tauri-plugin-stronghold
+   ```
+
+> This is P1 (compile pass). Runtime behavior is identical to other platforms.
+
 ## License
 
 Code: (c) 2015 - Present - The Tauri Programme within The Commons Conservancy.
