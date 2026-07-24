@@ -482,15 +482,25 @@ impl Builder {
                             .0
                             .try_lock()
                             .is_ok()
-                            && !window_clone.is_minimized().unwrap_or_default()
                         {
-                            let mut c = cache.lock().unwrap();
-                            if let Some(state) = c.get_mut(&label) {
-                                state.prev_x = state.x;
-                                state.prev_y = state.y;
+                            // OHOS: is_minimized() 经 window_getter! → is_window_minimized 的同步
+                            // NAPI 调用,在窗口过渡期(Moved/Resized 事件回调中)阻塞主线程致 appfreeze
+                            // (run_on_main_thread + recv 重入死锁)。OHOS 上跳过该守卫——最小化窗口不
+                            // 触发 Moved;其他平台保留原同步查询(其 send_user_message 主线程短路后
+                            // 直接 handle_user_message,非阻塞)。
+                            #[cfg(target_env = "ohos")]
+                            let minimized = false;
+                            #[cfg(not(target_env = "ohos"))]
+                            let minimized = window_clone.is_minimized().unwrap_or_default();
+                            if !minimized {
+                                let mut c = cache.lock().unwrap();
+                                if let Some(state) = c.get_mut(&label) {
+                                    state.prev_x = state.x;
+                                    state.prev_y = state.y;
 
-                                state.x = position.x;
-                                state.y = position.y;
+                                    state.x = position.x;
+                                    state.y = position.y;
+                                }
                             }
                         }
                     }
@@ -501,17 +511,26 @@ impl Builder {
                             .try_lock()
                             .is_ok()
                         {
-                            // TODO: Remove once https://github.com/tauri-apps/tauri/issues/5812 is resolved.
-                            let is_maximized = if cfg!(target_os = "macos")
-                                && (!window_clone.is_decorated().unwrap_or_default()
-                                    || !window_clone.is_resizable().unwrap_or_default())
-                            {
-                                false
-                            } else {
-                                window_clone.is_maximized().unwrap_or_default()
+                            // OHOS: is_minimized()/is_maximized() 同步查询在 resize 过渡期阻塞主线程
+                            // 致 appfreeze(见 Moved 注释)。OHOS 上跳过守卫无条件保存——最小化不触发
+                            // Resized;最大化由 close 时 update_state 捕获 state.maximized 驱动恢复,
+                            // 保存的尺寸不影响恢复。其他平台保留原同步查询。
+                            #[cfg(target_env = "ohos")]
+                            let save = true;
+                            #[cfg(not(target_env = "ohos"))]
+                            let save = {
+                                // TODO: Remove once https://github.com/tauri-apps/tauri/issues/5812 is resolved.
+                                let is_maximized = if cfg!(target_os = "macos")
+                                    && (!window_clone.is_decorated().unwrap_or_default()
+                                        || !window_clone.is_resizable().unwrap_or_default())
+                                {
+                                    false
+                                } else {
+                                    window_clone.is_maximized().unwrap_or_default()
+                                };
+                                !window_clone.is_minimized().unwrap_or_default() && !is_maximized
                             };
-
-                            if !window_clone.is_minimized().unwrap_or_default() && !is_maximized {
+                            if save {
                                 let mut c = cache.lock().unwrap();
                                 if let Some(state) = c.get_mut(&label) {
                                     state.width = size.width;
