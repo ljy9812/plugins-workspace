@@ -14,7 +14,6 @@ windows = { level = "full", notes = "" }
 linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "full", notes = "" }
-ohos = { level = "full", notes = "requires prebuilt libsodium; run scripts/build-libsodium-ohos.sh" }
 ios = { level = "full", notes = "" }
 
 [build-dependencies]
