@@ -187,51 +187,100 @@ impl<R: Runtime> StoreBuilder<R> {
     }
 
     pub(crate) fn build_inner(mut self) -> crate::Result<(Arc<Store<R>>, ResourceId)> {
-        self.path = resolve_store_path(&self.app, self.path)?;
+        #[cfg(target_env = "ohos")]
+        {
+            // OHOS: load(fs::read) 在 stores 写锁外执行,避免阻塞并发 load/get_store/close;
+            // 写锁仅持有存在性检查 + insert(临界区内无磁盘 IO)。
+            self.path = resolve_store_path(&self.app, self.path)?;
 
-        // 锁外:构造 store_inner + load(fs::read 不持 stores 写锁,避免阻塞并发 load/get_store/close)
-        let mut store_inner = StoreInner::new(
-            self.app.clone(),
-            self.path.clone(),
-            self.defaults.take(),
-            self.serialize_fn,
-            self.deserialize_fn,
-        );
-        if !self.create_new {
-            if self.override_defaults {
-                let _ = store_inner.load_ignore_defaults();
-            } else {
-                let _ = store_inner.load();
+            let mut store_inner = StoreInner::new(
+                self.app.clone(),
+                self.path.clone(),
+                self.defaults.take(),
+                self.serialize_fn,
+                self.deserialize_fn,
+            );
+            if !self.create_new {
+                if self.override_defaults {
+                    let _ = store_inner.load_ignore_defaults();
+                } else {
+                    let _ = store_inner.load();
+                }
             }
+
+            let stores = self.app.state::<StoreState>().stores.clone();
+            let mut stores = stores.write().unwrap();
+
+            if self.create_new {
+                if let Some(rid) = stores.remove(&self.path) {
+                    let _ = self.app.resources_table().take::<Store<R>>(rid);
+                }
+            } else if let Some(rid) = stores.get(&self.path) {
+                // 锁外 load 的结果丢弃,返回 map 中已加载的实例
+                return Ok((self.app.resources_table().get(*rid)?, *rid));
+            }
+
+            let store = Store {
+                auto_save: self.auto_save,
+                auto_save_debounce_sender: Arc::new(Mutex::new(None)),
+                store: Arc::new(Mutex::new(store_inner)),
+            };
+            let store = Arc::new(store);
+            let rid = self.app.resources_table().add_arc(store.clone());
+            stores.insert(self.path, rid);
+            return Ok((store, rid));
         }
 
-        // 持写锁:仅做存在性检查 + insert(临界区内无磁盘 IO)
-        let stores = self.app.state::<StoreState>().stores.clone();
-        let mut stores = stores.write().unwrap();
+        #[cfg(not(target_env = "ohos"))]
+        {
+            let stores = self.app.state::<StoreState>().stores.clone();
+            let mut stores = stores.write().unwrap();
 
-        if self.create_new {
-            if let Some(rid) = stores.remove(&self.path) {
-                let _ = self.app.resources_table().take::<Store<R>>(rid);
+            self.path = resolve_store_path(&self.app, self.path)?;
+
+            if self.create_new {
+                if let Some(rid) = stores.remove(&self.path) {
+                    let _ = self.app.resources_table().take::<Store<R>>(rid);
+                }
+            } else if let Some(rid) = stores.get(&self.path) {
+                // The resource id we stored can be invalid due to
+                // the resource table getting modified by an external source
+                // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
+                return Ok((self.app.resources_table().get(*rid)?, *rid));
             }
-        } else if let Some(rid) = stores.get(&self.path) {
-            // The resource id we stored can be invalid due to
-            // the resource table getting modified by an external source
-            // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
-            // 锁外 load 的结果丢弃,返回 map 中已加载的实例
-            return Ok((self.app.resources_table().get(*rid)?, *rid));
+
+            // if stores.contains_key(&self.path) {
+            //     return Err(crate::Error::AlreadyExists(self.path));
+            // }
+
+            let mut store_inner = StoreInner::new(
+                self.app.clone(),
+                self.path.clone(),
+                self.defaults.take(),
+                self.serialize_fn,
+                self.deserialize_fn,
+            );
+
+            if !self.create_new {
+                if self.override_defaults {
+                    let _ = store_inner.load_ignore_defaults();
+                } else {
+                    let _ = store_inner.load();
+                }
+            }
+
+            let store = Store {
+                auto_save: self.auto_save,
+                auto_save_debounce_sender: Arc::new(Mutex::new(None)),
+                store: Arc::new(Mutex::new(store_inner)),
+            };
+
+            let store = Arc::new(store);
+            let rid = self.app.resources_table().add_arc(store.clone());
+            stores.insert(self.path, rid);
+
+            Ok((store, rid))
         }
-
-        let store = Store {
-            auto_save: self.auto_save,
-            auto_save_debounce_sender: Arc::new(Mutex::new(None)),
-            store: Arc::new(Mutex::new(store_inner)),
-        };
-
-        let store = Arc::new(store);
-        let rid = self.app.resources_table().add_arc(store.clone());
-        stores.insert(self.path, rid);
-
-        Ok((store, rid))
     }
 
     /// Load the existing store with the same path or creates a new [`Store`].

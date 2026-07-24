@@ -85,6 +85,7 @@ impl Builder {
                     let bind_addr = format!("127.0.0.1:{}", port);
                     #[cfg(not(target_env = "ohos"))]
                     let bind_addr = format!("{}:{}", host, port);
+                    #[cfg(target_env = "ohos")]
                     let server = match Server::http(&bind_addr) {
                         Ok(s) => {
                             log::info!("[localhost plugin] listening on {}", bind_addr);
@@ -95,6 +96,8 @@ impl Builder {
                             return;
                         }
                     };
+                    #[cfg(not(target_env = "ohos"))]
+                    let server = Server::http(&bind_addr).expect("Unable to spawn server");
                     for req in server.incoming_requests() {
                         let path = req
                             .url()
