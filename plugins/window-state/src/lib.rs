@@ -298,9 +298,19 @@ impl<R: Runtime> WindowExtInternal for WebviewWindow<R> {
 
 impl<R: Runtime> WindowExtInternal for Window<R> {
     fn update_state(&self, state: &mut WindowState, flags: StateFlags) -> tauri::Result<()> {
+        // OHOS: is_maximized()/is_minimized() 经 is_window_maximized/is_window_minimized 同步
+        // NAPI 调用,在窗口过渡期(CloseRequested 等)阻塞主线程致 appfreeze/测试超时(见
+        // on_window_event Resized/Moved 修复)。OHOS 上跳过(置 false);其余查询(is_fullscreen
+        // /is_decorated/is_visible/inner_size/outer_position)在 OHOS 均为默认值或缓存,非阻塞。
+        #[cfg(target_env = "ohos")]
+        let is_maximized = false;
+        #[cfg(not(target_env = "ohos"))]
         let is_maximized = flags
             .intersects(StateFlags::MAXIMIZED | StateFlags::POSITION | StateFlags::SIZE)
             && self.is_maximized()?;
+        #[cfg(target_env = "ohos")]
+        let is_minimized = false;
+        #[cfg(not(target_env = "ohos"))]
         let is_minimized =
             flags.intersects(StateFlags::POSITION | StateFlags::SIZE) && self.is_minimized()?;
 
