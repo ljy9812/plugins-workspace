@@ -187,53 +187,100 @@ impl<R: Runtime> StoreBuilder<R> {
     }
 
     pub(crate) fn build_inner(mut self) -> crate::Result<(Arc<Store<R>>, ResourceId)> {
-        let stores = self.app.state::<StoreState>().stores.clone();
-        let mut stores = stores.write().unwrap();
+        #[cfg(target_env = "ohos")]
+        {
+            // OHOS: load(fs::read) 在 stores 写锁外执行,避免阻塞并发 load/get_store/close;
+            // 写锁仅持有存在性检查 + insert(临界区内无磁盘 IO)。
+            self.path = resolve_store_path(&self.app, self.path)?;
 
-        self.path = resolve_store_path(&self.app, self.path)?;
-
-        if self.create_new {
-            if let Some(rid) = stores.remove(&self.path) {
-                let _ = self.app.resources_table().take::<Store<R>>(rid);
+            let mut store_inner = StoreInner::new(
+                self.app.clone(),
+                self.path.clone(),
+                self.defaults.take(),
+                self.serialize_fn,
+                self.deserialize_fn,
+            );
+            if !self.create_new {
+                if self.override_defaults {
+                    let _ = store_inner.load_ignore_defaults();
+                } else {
+                    let _ = store_inner.load();
+                }
             }
-        } else if let Some(rid) = stores.get(&self.path) {
-            // The resource id we stored can be invalid due to
-            // the resource table getting modified by an external source
-            // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
-            return Ok((self.app.resources_table().get(*rid)?, *rid));
+
+            let stores = self.app.state::<StoreState>().stores.clone();
+            let mut stores = stores.write().unwrap();
+
+            if self.create_new {
+                if let Some(rid) = stores.remove(&self.path) {
+                    let _ = self.app.resources_table().take::<Store<R>>(rid);
+                }
+            } else if let Some(rid) = stores.get(&self.path) {
+                // 锁外 load 的结果丢弃,返回 map 中已加载的实例
+                return Ok((self.app.resources_table().get(*rid)?, *rid));
+            }
+
+            let store = Store {
+                auto_save: self.auto_save,
+                auto_save_debounce_sender: Arc::new(Mutex::new(None)),
+                store: Arc::new(Mutex::new(store_inner)),
+            };
+            let store = Arc::new(store);
+            let rid = self.app.resources_table().add_arc(store.clone());
+            stores.insert(self.path, rid);
+            return Ok((store, rid));
         }
 
-        // if stores.contains_key(&self.path) {
-        //     return Err(crate::Error::AlreadyExists(self.path));
-        // }
+        #[cfg(not(target_env = "ohos"))]
+        {
+            let stores = self.app.state::<StoreState>().stores.clone();
+            let mut stores = stores.write().unwrap();
 
-        let mut store_inner = StoreInner::new(
-            self.app.clone(),
-            self.path.clone(),
-            self.defaults.take(),
-            self.serialize_fn,
-            self.deserialize_fn,
-        );
+            self.path = resolve_store_path(&self.app, self.path)?;
 
-        if !self.create_new {
-            if self.override_defaults {
-                let _ = store_inner.load_ignore_defaults();
-            } else {
-                let _ = store_inner.load();
+            if self.create_new {
+                if let Some(rid) = stores.remove(&self.path) {
+                    let _ = self.app.resources_table().take::<Store<R>>(rid);
+                }
+            } else if let Some(rid) = stores.get(&self.path) {
+                // The resource id we stored can be invalid due to
+                // the resource table getting modified by an external source
+                // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
+                return Ok((self.app.resources_table().get(*rid)?, *rid));
             }
+
+            // if stores.contains_key(&self.path) {
+            //     return Err(crate::Error::AlreadyExists(self.path));
+            // }
+
+            let mut store_inner = StoreInner::new(
+                self.app.clone(),
+                self.path.clone(),
+                self.defaults.take(),
+                self.serialize_fn,
+                self.deserialize_fn,
+            );
+
+            if !self.create_new {
+                if self.override_defaults {
+                    let _ = store_inner.load_ignore_defaults();
+                } else {
+                    let _ = store_inner.load();
+                }
+            }
+
+            let store = Store {
+                auto_save: self.auto_save,
+                auto_save_debounce_sender: Arc::new(Mutex::new(None)),
+                store: Arc::new(Mutex::new(store_inner)),
+            };
+
+            let store = Arc::new(store);
+            let rid = self.app.resources_table().add_arc(store.clone());
+            stores.insert(self.path, rid);
+
+            Ok((store, rid))
         }
-
-        let store = Store {
-            auto_save: self.auto_save,
-            auto_save_debounce_sender: Arc::new(Mutex::new(None)),
-            store: Arc::new(Mutex::new(store_inner)),
-        };
-
-        let store = Arc::new(store);
-        let rid = self.app.resources_table().add_arc(store.clone());
-        stores.insert(self.path, rid);
-
-        Ok((store, rid))
     }
 
     /// Load the existing store with the same path or creates a new [`Store`].
@@ -549,6 +596,34 @@ impl<R: Runtime> Store<R> {
         self.store.lock().unwrap().save()
     }
 
+    /// Like `save` but on OHOS degrades to skip instead of blocking the main
+    /// thread when the `StoreInner` mutex is contended (e.g. an in-flight
+    /// auto-save debounce task holds it during `RunEvent::Exit`). Other
+    /// platforms compile this to a direct `save()` passthrough.
+    pub(crate) fn save_or_skip(&self) -> crate::Result<()> {
+        #[cfg(target_env = "ohos")]
+        {
+            match self.store.try_lock() {
+                Ok(mut guard) => {
+                    if let Some(sender) =
+                        self.auto_save_debounce_sender.lock().unwrap().take()
+                    {
+                        let _ = sender.send(AutoSaveMessage::Cancel);
+                    }
+                    guard.save()
+                }
+                Err(_) => {
+                    tracing::warn!("store: StoreInner locked on exit, skipping save");
+                    Ok(())
+                }
+            }
+        }
+        #[cfg(not(target_env = "ohos"))]
+        {
+            self.save()
+        }
+    }
+
     /// Removes the store from the resource table
     pub fn close_resource(&self) {
         let store = self.store.lock().unwrap();
@@ -602,13 +677,24 @@ impl<R: Runtime> Store<R> {
         // Cancel and save if auto save is pending
         if let Some(sender) = self.auto_save_debounce_sender.lock().unwrap().take() {
             let _ = sender.send(AutoSaveMessage::Cancel);
-            let _ = self.save();
+            // Drop 路径复用 save_or_skip:OHOS 下 StoreInner 争用时 try_lock 失败则降级跳过,
+            // 避免主线程阻塞触发 appfreeze;其他平台透传 self.save() 行为不变。
+            let _ = self.save_or_skip();
         };
     }
 }
 
 impl<R: Runtime> Drop for Store<R> {
     fn drop(&mut self) {
+        // OHOS: Drop 路径完全跳过 auto-save。apply_pending_auto_save 会获取
+        // auto_save_debounce_sender Mutex(被 in-flight debounce 任务持有)+ StoreInner Mutex,
+        // 在 Drop 内阻塞导致 invoke 响应延迟/timeout(appfreeze 风险)。调用方应显式 save();
+        // 与 RunEvent::Exit 的 save_or_skip 降级策略一致。其他平台走原 apply_pending_auto_save。
+        #[cfg(target_env = "ohos")]
+        {
+            return;
+        }
+        #[cfg(not(target_env = "ohos"))]
         self.apply_pending_auto_save();
     }
 }

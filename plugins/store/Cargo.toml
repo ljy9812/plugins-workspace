@@ -13,6 +13,7 @@ links = "tauri-plugin-store"
 windows = { level = "full", notes = "" }
 linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
+ohos = { level = "full", notes = "RunEvent::Exit save path hardened with try_read/try_lock; other platforms unchanged" }
 android = { level = "full", notes = "" }
 ios = { level = "full", notes = "" }
 

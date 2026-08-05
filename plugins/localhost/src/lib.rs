@@ -79,9 +79,25 @@ impl Builder {
         PluginBuilder::new("localhost")
             .setup(move |app, _api| {
                 let asset_resolver = app.asset_resolver();
+
                 std::thread::spawn(move || {
-                    let server =
-                        Server::http(format!("{host}:{port}")).expect("Unable to spawn server");
+                    #[cfg(target_env = "ohos")]
+                    let bind_addr = format!("127.0.0.1:{}", port);
+                    #[cfg(not(target_env = "ohos"))]
+                    let bind_addr = format!("{}:{}", host, port);
+                    #[cfg(target_env = "ohos")]
+                    let server = match Server::http(&bind_addr) {
+                        Ok(s) => {
+                            log::info!("[localhost plugin] listening on {}", bind_addr);
+                            s
+                        }
+                        Err(e) => {
+                            log::error!("[localhost plugin] failed to bind {}: {}", bind_addr, e);
+                            return;
+                        }
+                    };
+                    #[cfg(not(target_env = "ohos"))]
+                    let server = Server::http(&bind_addr).expect("Unable to spawn server");
                     for req in server.incoming_requests() {
                         let path = req
                             .url()
@@ -108,6 +124,26 @@ impl Builder {
                             response
                                 .headers
                                 .insert("Cache-Control".into(), "no-cache".into());
+
+                            // CORS: OHOS-only. ArkWeb CspBypassing makes CSP unreliable on OHOS,
+                            // and the examples/api test fetches the localhost server cross-origin
+                            // (tauri://localhost page -> http://127.0.0.1:PORT). Gate to OHOS so
+                            // non-OHOS platforms keep their existing (stricter) CORS posture.
+                            #[cfg(target_env = "ohos")]
+                            {
+                                response.headers.insert(
+                                    "Access-Control-Allow-Origin".into(),
+                                    "*".into(),
+                                );
+                                response.headers.insert(
+                                    "Access-Control-Allow-Methods".into(),
+                                    "GET, POST, PUT, DELETE, OPTIONS".into(),
+                                );
+                                response.headers.insert(
+                                    "Access-Control-Allow-Headers".into(),
+                                    "*".into(),
+                                );
+                            }
 
                             if let Some(on_request) = &on_request {
                                 on_request(&request, &mut response);

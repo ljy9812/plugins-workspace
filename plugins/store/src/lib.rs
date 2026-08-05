@@ -129,6 +129,16 @@ async fn load<R: Runtime>(
     options: Option<LoadStoreOptions>,
 ) -> Result<ResourceId> {
     let builder = builder(app, store_state, path, options)?;
+    // OHOS: build_inner 含同步 fs::read,移入 spawn_blocking 避免阻塞 tokio worker(规避 appfreeze)。
+    // 其他平台保留原 inline 调用,行为/错误处理逐处不变。
+    #[cfg(target_env = "ohos")]
+    let (_, rid) = tauri::async_runtime::spawn_blocking(move || builder.build_inner())
+        .await
+        .map_err(|e| {
+            tracing::error!("store load spawn_blocking join failed: {}", e);
+            crate::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+        })??;
+    #[cfg(not(target_env = "ohos"))]
     let (_, rid) = builder.build_inner()?;
     Ok(rid)
 }
@@ -448,12 +458,22 @@ impl Builder {
             .on_event(|app_handle, event| {
                 if let RunEvent::Exit = event {
                     let collection = app_handle.state::<StoreState>();
+                    #[cfg(target_env = "ohos")]
+                    let stores = match collection.stores.try_read() {
+                        Ok(g) => g,
+                        Err(_) => {
+                            tracing::warn!("store: stores map locked on exit, skipping save");
+                            return;
+                        }
+                    };
+                    #[cfg(not(target_env = "ohos"))]
                     let stores = collection.stores.read().unwrap();
                     for (path, rid) in stores.iter() {
-                        if let Ok(store) = app_handle.resources_table().get::<Store<R>>(*rid) {
-                            if let Err(err) = store.save() {
-                                tracing::error!("failed to save store {path:?} with error {err:?}");
-                            }
+                        let Ok(store) = app_handle.resources_table().get::<Store<R>>(*rid) else {
+                            continue;
+                        };
+                        if let Err(err) = store.save_or_skip() {
+                            tracing::error!("failed to save store {path:?} with error {err:?}");
                         }
                     }
                 }
