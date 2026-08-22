@@ -129,6 +129,18 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         let cache = self.state::<WindowStateCache>();
         let mut state = cache.0.lock().unwrap();
 
+        // OHOS: skip update_state() — it calls window_getter! (inner_size,
+        // outer_position, is_fullscreen, etc.) which sends a message to the
+        // main thread and blocks on rx.recv(). From a tokio worker thread
+        // (save_window_state is async fn), this goes through
+        // proxy.send_event + waker TSFN. The waker may not trigger a prompt
+        // MainEvent::UserEvent drain, leaving the worker blocked indefinitely
+        // → "failed to receive message from webview".
+        //
+        // The cache is already kept up to date by the Resized/Moved event
+        // handlers (which run on the main thread and only update width/height
+        // and x/y). No re-query is needed before writing to disk.
+        #[cfg(not(target_env = "ohos"))]
         for (label, s) in state.iter_mut() {
             let window = if let Some(map) = &plugin_state.map_label {
                 windows
@@ -140,6 +152,35 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
 
             if let Some(window) = window {
                 window.update_state(s, flags)?;
+            }
+        }
+        // OHOS: tao emits `windowRectChange` (MOVE/DRAG) as `Event::ContentRectChange`
+        // (lifecycle.rs window_rect_change), NOT `WindowEvent::Moved`. So the Moved handler
+        // above — the only place `state.x/y` are refreshed post-creation — never fires on
+        // OHOS, leaving them at the creation-time default. save would then write that stale
+        // position and restore_state yanks the window back to the creation spot
+        // ("save resets position"). `outer_position()` reads the `window_rect` cache that
+        // ArkTS keeps current via `on("windowRectChange", MOVE)` during drag (non-blocking,
+        // no main-thread recv), so refresh position here, mirroring the non-OHOS label
+        // mapping. Other fields (size via the Resized handler, maximized on close) have
+        // their own OHOS-safe paths; only POSITION is confirmed broken.
+        #[cfg(target_env = "ohos")]
+        for (label, s) in state.iter_mut() {
+            if !flags.contains(StateFlags::POSITION) {
+                continue;
+            }
+            let window = if let Some(map) = &plugin_state.map_label {
+                windows
+                    .iter()
+                    .find_map(|(l, window)| (map(l) == label).then_some(window))
+            } else {
+                windows.get(label)
+            };
+            if let Some(window) = window {
+                if let Ok(pos) = window.outer_position() {
+                    s.x = pos.x;
+                    s.y = pos.y;
+                }
             }
         }
 
@@ -211,6 +252,7 @@ impl<R: Runtime> WindowExt for Window<R> {
             .filter(|state| state != &&WindowState::default())
         {
             if flags.contains(StateFlags::DECORATIONS) {
+                #[cfg(desktop)]
                 self.set_decorations(state.decorated)?;
             }
 
@@ -235,10 +277,12 @@ impl<R: Runtime> WindowExt for Window<R> {
             }
 
             if flags.contains(StateFlags::MAXIMIZED) && state.maximized {
+                #[cfg(desktop)]
                 self.maximize()?;
             }
 
             if flags.contains(StateFlags::FULLSCREEN) {
+                #[cfg(desktop)]
                 self.set_fullscreen(state.fullscreen)?;
             }
 
@@ -246,6 +290,13 @@ impl<R: Runtime> WindowExt for Window<R> {
         } else {
             let mut metadata = WindowState::default();
 
+            // OHOS: skip window_getter! calls (inner_size, outer_position,
+            // is_maximized, etc.) — they block on rx.recv() from a tokio
+            // worker thread. Default values (0×0, not maximized, etc.) are
+            // acceptable; the Resized/Moved event handlers will populate
+            // the cache with real values on subsequent events.
+            #[cfg(not(target_env = "ohos"))]
+            {
             if flags.contains(StateFlags::SIZE) {
                 let size = self.inner_size()?;
                 metadata.width = size.width;
@@ -273,6 +324,7 @@ impl<R: Runtime> WindowExt for Window<R> {
             if flags.contains(StateFlags::FULLSCREEN) {
                 metadata.fullscreen = self.is_fullscreen()?;
             }
+            } // end #[cfg(not(target_env = "ohos"))]
 
             c.insert(label.into(), metadata);
         }
@@ -298,9 +350,21 @@ impl<R: Runtime> WindowExtInternal for WebviewWindow<R> {
 
 impl<R: Runtime> WindowExtInternal for Window<R> {
     fn update_state(&self, state: &mut WindowState, flags: StateFlags) -> tauri::Result<()> {
+        // OHOS: is_maximized()/is_minimized() use synchronous NAPI calls
+        // (is_window_maximized/is_window_minimized) that block the main thread
+        // during window transitions (CloseRequested etc.), causing appfreeze /
+        // test timeouts (see on_window_event Resized/Moved fix). Skip on OHOS
+        // (set false); other queries (is_fullscreen/is_decorated/is_visible /
+        // inner_size/outer_position) are default values or cached, non-blocking.
+        #[cfg(target_env = "ohos")]
+        let is_maximized = false;
+        #[cfg(not(target_env = "ohos"))]
         let is_maximized = flags
             .intersects(StateFlags::MAXIMIZED | StateFlags::POSITION | StateFlags::SIZE)
             && self.is_maximized()?;
+        #[cfg(target_env = "ohos")]
+        let is_minimized = false;
+        #[cfg(not(target_env = "ohos"))]
         let is_minimized =
             flags.intersects(StateFlags::POSITION | StateFlags::SIZE) && self.is_minimized()?;
 

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-#[cfg(any(mobile, target_env = "ohos"))]
-use serde::{Deserialize, Serialize};
+#[cfg(target_env = "ohos")]
+use serde::Deserialize;
 use tauri::{command, plugin::PermissionState, AppHandle, Runtime, State};
 
 use crate::{Notification, NotificationData, Result};
@@ -41,10 +41,7 @@ pub(crate) async fn notify<R: Runtime>(
 }
 
 /// Cancel pending notifications by ID, or all if none specified.
-///
-/// **OHOS note**: Scheduling is not supported on OHOS, so pending notifications
-/// are always empty. This command effectively does nothing on OHOS.
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn cancel<R: Runtime>(
     _app: AppHandle<R>,
@@ -58,10 +55,7 @@ pub(crate) async fn cancel<R: Runtime>(
 }
 
 /// Get pending notifications.
-///
-/// **OHOS note**: Scheduling is not supported on OHOS, so this always returns
-/// an empty list. Included for API compatibility.
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn get_pending<R: Runtime>(
     _app: AppHandle<R>,
@@ -70,7 +64,7 @@ pub(crate) async fn get_pending<R: Runtime>(
     notification.pending()
 }
 
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn remove_active<R: Runtime>(
     _app: AppHandle<R>,
@@ -85,7 +79,7 @@ pub(crate) async fn remove_active<R: Runtime>(
     }
 }
 
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn get_active<R: Runtime>(
     _app: AppHandle<R>,
@@ -94,66 +88,7 @@ pub(crate) async fn get_active<R: Runtime>(
     notification.active()
 }
 
-#[cfg(any(mobile, target_env = "ohos"))]
-#[command]
-pub(crate) async fn check_permissions<R: Runtime>(
-    _app: AppHandle<R>,
-    notification: State<'_, Notification<R>>,
-) -> Result<PermissionState> {
-    notification.permission_state()
-}
-
-#[cfg(any(mobile, target_env = "ohos"))]
-#[command]
-pub(crate) async fn show<R: Runtime>(
-    _app: AppHandle<R>,
-    notification: State<'_, Notification<R>>,
-    options: NotificationData,
-) -> Result<i32> {
-    let mut builder = notification.builder();
-    let id = options.id;
-    builder.data = options;
-    builder.show()?;
-    Ok(id)
-}
-
-/// Result of a batch notification send.
-/// Always returned as `Ok` — partial failures are captured in `failures`
-/// rather than causing the entire batch to error.
-#[cfg(any(mobile, target_env = "ohos"))]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BatchResult {
-    /// IDs of successfully sent notifications.
-    pub successes: Vec<i32>,
-    /// Per-notification failures: (id, error_message).
-    pub failures: Vec<(i32, String)>,
-}
-
-#[cfg(any(mobile, target_env = "ohos"))]
-#[command]
-pub(crate) async fn batch<R: Runtime>(
-    _app: AppHandle<R>,
-    notification: State<'_, Notification<R>>,
-    notifications: Vec<NotificationData>,
-) -> Result<BatchResult> {
-    let mut successes = Vec::with_capacity(notifications.len());
-    let mut failures: Vec<(i32, String)> = Vec::new();
-    for data in notifications {
-        let mut builder = notification.builder();
-        let id = data.id;
-        builder.data = data;
-        match builder.show() {
-            Ok(()) => successes.push(id),
-            Err(e) => failures.push((id, e.to_string())),
-        }
-    }
-    Ok(BatchResult {
-        successes,
-        failures,
-    })
-}
-
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn register_action_types<R: Runtime>(
     _app: AppHandle<R>,
@@ -185,19 +120,45 @@ pub(crate) async fn register_action_types<R: Runtime>(
 ///   "visibility": 0               // i8: -1=Secret, 0=Private, 1=Public | null (optional)
 /// }
 /// ```
-#[cfg(any(target_os = "android", target_env = "ohos"))]
+/// OHOS: the JS SDK sends `{ ...channel }` (spread), so the channel fields are
+/// top-level keys in the invoke body (e.g. `{ "id": "...", "name": "..." }`).
+/// A normal `data: serde_json::Value` parameter looks for a `"data"` key that
+/// doesn't exist. `ChannelArg` bypasses the key lookup and deserializes from
+/// the entire payload.
+#[cfg(target_env = "ohos")]
+pub(crate) struct ChannelArg(crate::Channel);
+
+#[cfg(target_env = "ohos")]
+impl<'de, R: Runtime> tauri::ipc::CommandArg<'de, R> for ChannelArg {
+    fn from_command(command: tauri::ipc::CommandItem<'de, R>) -> std::result::Result<Self, tauri::ipc::InvokeError> {
+        match command.message.payload() {
+            tauri::ipc::InvokeBody::Json(v) => {
+                let ch: crate::Channel = serde_json::from_value(v.clone())
+                    .map_err(|e| {
+                        tauri::ipc::InvokeError::from_error(
+                            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+                        )
+                    })?;
+                Ok(ChannelArg(ch))
+            }
+            tauri::ipc::InvokeBody::Raw(_) => Err(tauri::ipc::InvokeError::from_error(
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "create_channel expects JSON payload"),
+            )),
+        }
+    }
+}
+
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn create_channel<R: Runtime>(
     _app: AppHandle<R>,
     notification: State<'_, Notification<R>>,
-    data: serde_json::Value,
+    _channel: ChannelArg,
 ) -> Result<()> {
-    let ch: crate::Channel = serde_json::from_value(data)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-    notification.create_channel(ch)
+    notification.create_channel(_channel.0)
 }
 
-#[cfg(any(target_os = "android", target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn delete_channel<R: Runtime>(
     _app: AppHandle<R>,
@@ -207,7 +168,7 @@ pub(crate) async fn delete_channel<R: Runtime>(
     notification.delete_channel(id)
 }
 
-#[cfg(any(target_os = "android", target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn list_channels<R: Runtime>(
     _app: AppHandle<R>,
@@ -216,7 +177,7 @@ pub(crate) async fn list_channels<R: Runtime>(
     notification.list_channels_raw()
 }
 
-#[cfg(any(mobile, target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[derive(serde::Deserialize)]
 pub(crate) struct RemoveActiveId {
     pub id: i32,

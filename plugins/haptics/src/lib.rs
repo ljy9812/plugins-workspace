@@ -9,9 +9,9 @@ use tauri::{
 
 pub use models::*;
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 mod desktop;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 mod mobile;
 
 mod commands;
@@ -20,9 +20,9 @@ mod models;
 
 pub use error::{Error, Result};
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 pub use desktop::Haptics;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub use mobile::Haptics;
 
 /// Extensions to [`tauri::App`], [`tauri::AppHandle`], [`tauri::WebviewWindow`], [`tauri::Webview`] and [`tauri::Window`] to access the haptics APIs.
@@ -46,9 +46,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::selection_feedback
         ])
         .setup(|app, api| {
-            #[cfg(mobile)]
+            #[cfg(any(mobile, target_env = "ohos"))]
             let haptics = mobile::init(app, api)?;
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_env = "ohos")))]
             let haptics = desktop::init(app, api)?;
             app.manage(haptics);
             Ok(())

@@ -38,9 +38,6 @@ pub use desktop::Notification;
 #[cfg(any(mobile, target_env = "ohos"))]
 pub use mobile::Notification;
 
-#[cfg(any(mobile, target_env = "ohos"))]
-pub use commands::BatchResult;
-
 /// The notification builder.
 #[derive(Debug)]
 pub struct NotificationBuilder<R: Runtime> {
@@ -182,10 +179,17 @@ impl<R: Runtime> NotificationBuilder<R> {
     /// Adds an extra payload to store in the notification.
     pub fn extra(mut self, key: impl Into<String>, value: impl Serialize) -> Self {
         let key = key.into();
-        match serde_json::to_value(value) {
-            Ok(v) => { self.data.extra.insert(key, v); }
-            Err(e) => {
-                log::warn!("NotificationBuilder::extra: failed to serialize value for key '{key}': {e}");
+        #[cfg(not(target_env = "ohos"))]
+        {
+            self.data.extra.insert(key, serde_json::to_value(value).unwrap());
+        }
+        #[cfg(target_env = "ohos")]
+        {
+            match serde_json::to_value(value) {
+                Ok(v) => { self.data.extra.insert(key, v); }
+                Err(e) => {
+                    log::warn!("NotificationBuilder::extra: failed to serialize value for key '{key}': {e}");
+                }
             }
         }
         self
@@ -232,27 +236,21 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::notify,
             commands::request_permission,
             commands::is_permission_granted,
-            #[cfg(any(mobile, target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::cancel,
-            #[cfg(any(mobile, target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::get_pending,
-            #[cfg(any(mobile, target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::remove_active,
-            #[cfg(any(mobile, target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::get_active,
-            #[cfg(any(mobile, target_env = "ohos"))]
-            commands::check_permissions,
-            #[cfg(any(mobile, target_env = "ohos"))]
-            commands::show,
-            #[cfg(any(mobile, target_env = "ohos"))]
-            commands::batch,
-            #[cfg(any(mobile, target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::register_action_types,
-            #[cfg(any(target_os = "android", target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::create_channel,
-            #[cfg(any(target_os = "android", target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::delete_channel,
-            #[cfg(any(target_os = "android", target_env = "ohos"))]
+            #[cfg(target_env = "ohos")]
             commands::list_channels,
         ])
         .js_init_script(include_str!("init-iife.js").replace(

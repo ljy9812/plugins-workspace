@@ -9,9 +9,9 @@ use tauri::{
 
 pub use models::*;
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 mod desktop;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 mod mobile;
 
 mod commands;
@@ -20,9 +20,9 @@ mod models;
 
 pub use error::{Error, Result};
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_env = "ohos")))]
 pub use desktop::Geolocation;
-#[cfg(mobile)]
+#[cfg(any(mobile, target_env = "ohos"))]
 pub use mobile::Geolocation;
 
 /// Extensions to [`tauri::App`], [`tauri::AppHandle`], [`tauri::WebviewWindow`], [`tauri::Webview`] and [`tauri::Window`] to access the geolocation APIs.
@@ -44,12 +44,14 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::watch_position,
             commands::clear_watch,
             commands::check_permissions,
-            commands::request_permissions
+            commands::request_permissions,
+            #[cfg(target_env = "ohos")]
+            commands::open_location_settings
         ])
         .setup(|app, api| {
-            #[cfg(mobile)]
+            #[cfg(any(mobile, target_env = "ohos"))]
             let geolocation = mobile::init(app, api)?;
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_env = "ohos")))]
             let geolocation = desktop::init(app, api)?;
             app.manage(geolocation);
             Ok(())

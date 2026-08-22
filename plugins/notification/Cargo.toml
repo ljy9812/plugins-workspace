@@ -18,7 +18,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "full", notes = "" }
 ios = { level = "full", notes = "" }
-ohos = { level = "partial", notes = "Basic text/long notifications, permissions, channels via local mapping. Scheduling, actions, attachments not supported." }
+ohos = { level = "partial", notes = "Text/long/multiline notifications, permissions, channels, action buttons (click callback limited—no event emission bridge), foreground scheduling via setTimeout. Background scheduling via reminderAgentManager not implemented." }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }

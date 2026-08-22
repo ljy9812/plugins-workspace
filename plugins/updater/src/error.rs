@@ -89,6 +89,7 @@ pub enum Error {
     /// The configured updater endpoint must use a secure protocol like `https`
     #[error("The configured updater endpoint must use a secure protocol like `https`.")]
     InsecureTransportProtocol,
+    #[cfg(target_env = "ohos")]
     #[error("This operation is not supported on the current platform")]
     UnsupportedPlatform,
     #[error(transparent)]

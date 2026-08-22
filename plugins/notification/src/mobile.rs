@@ -69,20 +69,11 @@ impl<R: Runtime> Notification<R> {
     }
 
     pub fn register_action_types(&self, types: Vec<ActionType>) -> crate::Result<()> {
-        #[cfg(target_env = "ohos")]
-        {
-            let _ = types;
-            log::warn!("register_action_types is not supported on OHOS (no-op)");
-            return Ok(());
-        }
-        #[cfg(not(target_env = "ohos"))]
-        {
-            let mut args = HashMap::new();
-            args.insert("types", types);
-            self.0
-                .run_mobile_plugin("registerActionTypes", args)
-                .map_err(Into::into)
-        }
+        let mut args = HashMap::new();
+        args.insert("types", types);
+        self.0
+            .run_mobile_plugin("registerActionTypes", args)
+            .map_err(Into::into)
     }
 
     pub fn remove_active(&self, notifications: Vec<i32>) -> crate::Result<()> {
@@ -149,10 +140,19 @@ impl<R: Runtime> Notification<R> {
             .map_err(Into::into)
     }
 
+    /// Returns typed list of channels. Directly calls the mobile plugin
+    /// and deserializes the response.
+    #[cfg(target_os = "android")]
+    pub fn list_channels(&self) -> crate::Result<Vec<Channel>> {
+        self.0
+            .run_mobile_plugin("listChannels", ())
+            .map_err(Into::into)
+    }
+
     /// Returns raw JSON from listChannels (used by command layer to avoid
     /// ACL camelCase/snake_case mismatch). Rust callers should prefer
     /// `list_channels()` which returns typed `Vec<Channel>`.
-    #[cfg(any(target_os = "android", target_env = "ohos"))]
+    #[cfg(target_env = "ohos")]
     pub fn list_channels_raw(&self) -> crate::Result<serde_json::Value> {
         self.0
             .run_mobile_plugin("listChannels", ())
@@ -161,7 +161,7 @@ impl<R: Runtime> Notification<R> {
 
     /// Returns typed list of channels. Deserializes from the raw JSON
     /// returned by the platform plugin.
-    #[cfg(any(target_os = "android", target_env = "ohos"))]
+    #[cfg(target_env = "ohos")]
     pub fn list_channels(&self) -> crate::Result<Vec<Channel>> {
         let raw = self.list_channels_raw()?;
         serde_json::from_value(raw)

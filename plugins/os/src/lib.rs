@@ -29,6 +29,7 @@ pub enum OsType {
     Macos,
     IOS,
     Android,
+    #[cfg(target_env = "ohos")]
     Ohos,
 }
 
@@ -40,6 +41,7 @@ impl Display for OsType {
             Self::Macos => write!(f, "macos"),
             Self::IOS => write!(f, "ios"),
             Self::Android => write!(f, "android"),
+            #[cfg(target_env = "ohos")]
             Self::Ohos => write!(f, "ohos"),
         }
     }
@@ -54,11 +56,30 @@ pub fn platform() -> &'static str {
 }
 
 /// Returns the current operating system version.
+///
+/// On OHOS, this maps the HarmonyOS distribution API version (e.g. 50001 → 5.0.1)
+/// to a semantic version. If only the OpenHarmony SDK API level is available
+/// (pure OpenHarmony device), it is returned as the patch component (0.0.N).
 pub fn version() -> Version {
-    // TODO(OHOS): Replace with real version from openharmony-ability::version::sdk_api_version()
-    // or OHOS system property. Current MVP returns 0.0.0 as a known limitation.
     #[cfg(target_env = "ohos")]
-    return Version::Semantic(0, 0, 0);
+    {
+        use tauri::ohos::openharmony_ability::version;
+        let dist = version::distribution_api_version();
+        if dist > 0 {
+            // distribution_api_version = M * 10000 + S * 100 + F
+            let major = (dist / 10000) as u64;
+            let minor = ((dist % 10000) / 100) as u64;
+            let patch = (dist % 100) as u64;
+            Version::Semantic(major, minor, patch)
+        } else {
+            let sdk = version::sdk_api_version();
+            if sdk > 0 {
+                Version::Semantic(0, 0, sdk as u64)
+            } else {
+                Version::Unknown
+            }
+        }
+    }
     #[cfg(not(target_env = "ohos"))]
     os_info::get().version().clone()
 }
@@ -111,15 +132,27 @@ pub fn exe_extension() -> &'static str {
 /// Returns the current operating system locale with the `BCP-47` language tag. If the locale couldn't be obtained, `None` is returned instead.
 pub fn locale() -> Option<String> {
     #[cfg(target_env = "ohos")]
-    return None; // TODO(OHOS): implement via openharmony-ability
+    {
+        // preferred_locales() is populated from AbilityInitContext during
+        // ability initialization (ArkTS ProcessInitializer sends device locale).
+        let guard = tauri::ohos::APP.lock().ok()?;
+        let app = guard.as_ref()?;
+        app.preferred_locales()
+    }
     #[cfg(not(target_env = "ohos"))]
     sys_locale::get_locale()
 }
 
 /// Returns the current operating system hostname.
+///
+/// OHOS does not expose a public hostname API. The `openharmony-ability` crate
+/// does not provide a device-info bridge (deviceInfo is only available on the
+/// ArkTS side, not via Rust NAPI). Returns a constant "ohos" string as a
+/// placeholder; callers needing the device model should query system properties
+/// from the ArkTS layer directly.
 pub fn hostname() -> String {
     #[cfg(target_env = "ohos")]
-    return String::from("ohos"); // TODO(OHOS): implement via openharmony-ability
+    return String::from("ohos");
     #[cfg(not(target_env = "ohos"))]
     gethostname::gethostname().to_string_lossy().to_string()
 }

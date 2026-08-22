@@ -458,22 +458,12 @@ impl Builder {
             .on_event(|app_handle, event| {
                 if let RunEvent::Exit = event {
                     let collection = app_handle.state::<StoreState>();
-                    #[cfg(target_env = "ohos")]
-                    let stores = match collection.stores.try_read() {
-                        Ok(g) => g,
-                        Err(_) => {
-                            tracing::warn!("store: stores map locked on exit, skipping save");
-                            return;
-                        }
-                    };
-                    #[cfg(not(target_env = "ohos"))]
                     let stores = collection.stores.read().unwrap();
                     for (path, rid) in stores.iter() {
-                        let Ok(store) = app_handle.resources_table().get::<Store<R>>(*rid) else {
-                            continue;
-                        };
-                        if let Err(err) = store.save_or_skip() {
-                            tracing::error!("failed to save store {path:?} with error {err:?}");
+                        if let Ok(store) = app_handle.resources_table().get::<Store<R>>(*rid) {
+                            if let Err(err) = store.save() {
+                                tracing::error!("failed to save store {path:?} with error {err:?}");
+                            }
                         }
                     }
                 }

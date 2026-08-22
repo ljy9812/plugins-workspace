@@ -59,6 +59,7 @@ pub(crate) async fn check<R: Runtime>(
             .as_ref()
             .ok_or_else(|| Error::Network("OHOS APP not initialized".into()))?;
         app.updater()
+            .map_err(|e| Error::Network(e.reason.to_string()))?
     }; // guard dropped before await
 
     let result = updater
@@ -96,6 +97,7 @@ pub(crate) async fn download_and_install<R: Runtime>(
             .as_ref()
             .ok_or_else(|| Error::Network("OHOS APP not initialized".into()))?;
         app.updater()
+            .map_err(|e| Error::Network(e.reason.to_string()))?
     }; // guard dropped before await
 
     updater

@@ -15,7 +15,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "full", notes = "" }
 ios = { level = "full", notes = "" }
-ohos = { level = "partial", notes = "version() returns stub 0.0.0" }
+ohos = { level = "partial", notes = "version() maps distribution API version; locale() from preferred locales; hostname() returns constant (no public API)" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }

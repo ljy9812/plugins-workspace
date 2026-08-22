@@ -9,30 +9,8 @@ use std::path::{Path, PathBuf};
 /// ## Platform-specific:
 ///
 /// - **Android / iOS:** Unsupported.
-pub fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
-    let path = canonicalize(path.as_ref())?;
-
-    #[cfg(any(
-        windows,
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos")),
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ))]
-    return imp::reveal_items_in_dir(&[path]);
-
-    #[cfg(not(any(
-        windows,
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos")),
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))]
-    Err(crate::Error::UnsupportedPlatform)
+pub async fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
+    reveal_items_in_dir(std::iter::once(path)).await
 }
 
 /// Reveal multiple paths in the system's default explorer.
@@ -40,7 +18,7 @@ pub fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
 /// ## Platform-specific:
 ///
 /// - **Android / iOS:** Unsupported.
-pub fn reveal_items_in_dir<I, P>(paths: I) -> crate::Result<()>
+pub async fn reveal_items_in_dir<I, P>(paths: I) -> crate::Result<()>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
@@ -48,10 +26,22 @@ where
     let mut canonicalized = vec![];
 
     for path in paths {
+        // OHOS: public directories (/storage/media/..., /storage/Users/...)
+        // are NOT accessible from the app's mount namespace (hmmac returns
+        // ENOENT even for existing paths), so canonicalize would fail for the
+        // very paths that CAN be revealed. Pass the raw path through — the
+        // ArkTS side maps known public prefixes to file-manager virtual uris
+        // and the file manager itself is the arbiter of what it opens.
+        // Sandbox paths (the only ones the app can see) keep full validation.
+        #[cfg(target_env = "ohos")]
+        let path = canonicalize(path.as_ref()).unwrap_or_else(|_| path.as_ref().to_path_buf());
+        #[cfg(not(target_env = "ohos"))]
         let path = canonicalize(path.as_ref())?;
         canonicalized.push(path);
     }
 
+    // Non-OHOS platforms: sync `mod imp` (Windows/macOS/Linux/BSD). Called inline
+    // (no `.await`) — the async wrapper is call-convention only here.
     #[cfg(any(
         windows,
         target_os = "macos",
@@ -61,8 +51,17 @@ where
         target_os = "netbsd",
         target_os = "openbsd"
     ))]
-    return imp::reveal_items_in_dir(&canonicalized);
+    {
+        return imp::reveal_items_in_dir(&canonicalized);
+    }
 
+    // OHOS: async `mod imp` (openharmony_ability bridge). Awaits the TSFN bridge.
+    #[cfg(target_env = "ohos")]
+    {
+        return imp::reveal_items_in_dir(&canonicalized).await;
+    }
+
+    // Android / iOS and any other platform without a `mod imp`.
     #[cfg(not(any(
         windows,
         target_os = "macos",
@@ -70,7 +69,8 @@ where
         target_os = "dragonfly",
         target_os = "freebsd",
         target_os = "netbsd",
-        target_os = "openbsd"
+        target_os = "openbsd",
+        target_env = "ohos"
     )))]
     Err(crate::Error::UnsupportedPlatform)
 }
@@ -81,6 +81,45 @@ fn canonicalize(path: &Path) -> crate::Result<PathBuf> {
     #[cfg(not(windows))]
     let path = std::fs::canonicalize(path)?;
     Ok(path)
+}
+
+#[cfg(target_env = "ohos")]
+mod imp {
+    use std::path::PathBuf;
+
+    // OHOS has no multi-file "reveal/select" API — only the first path's parent
+    // is revealed; additional paths are ignored (documented limitation vs the
+    // non-OHOS imps which handle all paths). Paths arrive canonicalized when
+    // the app can see them (sandbox); public-dir paths are invisible to the
+    // app namespace and arrive raw (see the wrapper), so no re-canonicalize
+    // here either way.
+    pub async fn reveal_items_in_dir(paths: &[PathBuf]) -> crate::Result<()> {
+        if let Some(path) = paths.first() {
+            let parent = path
+                .parent()
+                .ok_or_else(|| crate::Error::NoParent(path.to_path_buf()))?;
+            // Pass the REAL filesystem path of the parent directory. The ArkTS
+            // side (UrlPlugin.ets) maps it to the file-manager virtual uri and
+            // starts an explicit file-manager Want. We do NOT build a file://
+            // URL here — real-path-form file:// URIs never match the 2in1 file
+            // manager (only archive utd types are registered for viewData).
+            // Sandbox/unmappable-prefix detection is done ArkTS-side (it owns
+            // OHOS sandbox layout knowledge) and surfaces as a documented error.
+            use openharmony_ability_plugin_url::UrlExt;
+            let ohos_app = tauri::ohos::APP
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().cloned())
+                .ok_or_else(|| {
+                    crate::Error::OpenharmonyAbility("OHOS APP not initialized".to_string())
+                })?;
+            ohos_app
+                .reveal_in_dir(parent.to_string_lossy().to_string())
+                .await
+                .map_err(|e| crate::Error::OpenharmonyAbility(e.to_string()))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(windows)]

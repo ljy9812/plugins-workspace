@@ -12,19 +12,17 @@ It allows all notification related features.
 - `allow-is-permission-granted`
 - `allow-request-permission`
 - `allow-notify`
+- `allow-permission-state`
 - `allow-register-action-types`
 - `allow-register-listener`
+- `allow-remove-listener`
 - `allow-cancel`
 - `allow-get-pending`
 - `allow-remove-active`
 - `allow-get-active`
-- `allow-check-permissions`
-- `allow-show`
-- `allow-batch`
 - `allow-list-channels`
 - `allow-delete-channel`
 - `allow-create-channel`
-- `allow-permission-state`
 
 ## Permission Table
 
@@ -34,32 +32,6 @@ It allows all notification related features.
 <th>Description</th>
 </tr>
 
-
-<tr>
-<td>
-
-`notification:allow-batch`
-
-</td>
-<td>
-
-Enables the batch command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:deny-batch`
-
-</td>
-<td>
-
-Denies the batch command without any pre-configured scope.
-
-</td>
-</tr>
 
 <tr>
 <td>
@@ -83,32 +55,6 @@ Enables the cancel command without any pre-configured scope.
 <td>
 
 Denies the cancel command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:allow-check-permissions`
-
-</td>
-<td>
-
-Enables the check_permissions command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:deny-check-permissions`
-
-</td>
-<td>
-
-Denies the check_permissions command without any pre-configured scope.
 
 </td>
 </tr>
@@ -402,6 +348,32 @@ Denies the remove_active command without any pre-configured scope.
 <tr>
 <td>
 
+`notification:allow-remove-listener`
+
+</td>
+<td>
+
+Enables the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notification:deny-remove-listener`
+
+</td>
+<td>
+
+Denies the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `notification:allow-request-permission`
 
 </td>
@@ -421,32 +393,6 @@ Enables the request_permission command without any pre-configured scope.
 <td>
 
 Denies the request_permission command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:allow-show`
-
-</td>
-<td>
-
-Enables the show command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`notification:deny-show`
-
-</td>
-<td>
-
-Denies the show command without any pre-configured scope.
 
 </td>
 </tr>

@@ -74,10 +74,10 @@ mod ohos_types {
     impl Modifiers {
         pub fn to_ohos_name(&self) -> &'static str {
             match self {
-                Modifiers::CONTROL => "Ctrl",
+                Modifiers::CONTROL => "Control",
                 Modifiers::ALT => "Alt",
                 Modifiers::SHIFT => "Shift",
-                Modifiers::SUPER => "Meta",
+                Modifiers::SUPER => "Super",
             }
         }
 
@@ -195,6 +195,19 @@ mod ohos_types {
                 }
             }
 
+            // OHOS inputConsumer.preKeys constraint: 1-2 modifier keys required.
+            // Rejecting at parse time ensures register() returns Err before the
+            // shortcut enters the HashMap, so isRegistered returns false.
+            if modifiers.is_empty() {
+                return Err("At least 1 modifier key is required".to_string());
+            }
+            if modifiers.len() > 2 {
+                return Err(format!(
+                    "OHOS supports at most 2 modifier keys, got {}",
+                    modifiers.len()
+                ));
+            }
+
             // Deterministic ID based on shortcut content (matches global-hotkey behavior)
             let normalized = s.to_lowercase();
             // Deterministic hash-based ID (djb2 variant). Collision risk is negligible
@@ -239,7 +252,6 @@ type HandlerFn<R> = Box<dyn Fn(&AppHandle<R>, &Shortcut, ShortcutEvent) + Send +
 
 pub struct ShortcutWrapper(Shortcut);
 
-#[cfg(not(target_env = "ohos"))]
 impl From<Shortcut> for ShortcutWrapper {
     fn from(value: Shortcut) -> Self {
         Self(value)
@@ -265,13 +277,6 @@ impl TryFrom<&str> for ShortcutWrapper {
     }
 }
 
-#[cfg(target_env = "ohos")]
-impl From<Shortcut> for ShortcutWrapper {
-    fn from(value: Shortcut) -> Self {
-        Self(value)
-    }
-}
-
 struct RegisteredShortcut<R: Runtime> {
     shortcut: Shortcut,
     handler: Option<Arc<HandlerFn<R>>>,
@@ -294,6 +299,8 @@ pub struct GlobalShortcut<R: Runtime> {
     app: AppHandle<R>,
     #[cfg(not(target_env = "ohos"))]
     manager: Arc<GlobalHotKeyManager>,
+    #[cfg(target_env = "ohos")]
+    client: Option<openharmony_ability_plugin_global_shortcut::GlobalShortcutClient>,
     shortcuts: Arc<Mutex<HashMap<HotKeyId, RegisteredShortcut<R>>>>,
 }
 
@@ -311,18 +318,167 @@ macro_rules! run_main_thread {
     }};
 }
 
-/// Convert OHOS stub modifiers to openharmony_ability ShortcutModifier.
+/// Convert OHOS stub modifiers to facade-compatible string names.
+/// Returns `"Control"`, `"Alt"`, `"Shift"`, `"Super"` — matching the
+/// `GlobalShortcutClient::register()` modifier name contract.
 #[cfg(target_env = "ohos")]
-fn to_ohos_modifiers(modifiers: &[Modifiers]) -> Vec<openharmony_ability::ShortcutModifier> {
+fn to_ohos_modifier_names(modifiers: &[Modifiers]) -> Vec<String> {
     modifiers
         .iter()
-        .map(|m| match m {
-            Modifiers::CONTROL => openharmony_ability::ShortcutModifier::Control,
-            Modifiers::ALT => openharmony_ability::ShortcutModifier::Alt,
-            Modifiers::SHIFT => openharmony_ability::ShortcutModifier::Shift,
-            Modifiers::SUPER => openharmony_ability::ShortcutModifier::Super,
-        })
+        .map(|m| m.to_ohos_name().to_string())
         .collect()
+}
+
+/// OHOS backend setup: create the GlobalShortcutClient facade, register
+/// all shortcuts, spawn the event-receiver thread, and manage the
+/// `GlobalShortcut` state. Extracted from `build()`'s setup closure so the
+/// shared closure body stays a one-line cfg dispatch (see reference §1.6).
+#[cfg(target_env = "ohos")]
+fn ohos_setup<R: Runtime>(
+    app: AppHandle<R>,
+    shortcuts: Vec<Shortcut>,
+    handler: Option<HandlerFn<R>>,
+    mut store: HashMap<HotKeyId, RegisteredShortcut<R>>,
+) {
+    use openharmony_ability_plugin_global_shortcut::{GlobalShortcutBridgePlugin, GlobalShortcutExt};
+
+    // Register the Rust-side GlobalShortcut bridge plugin so ArkTS configurePlugins
+    // can match it. Without this, bridge calls fail with
+    // "Bridge plugin 'ohos.global-shortcut' is not installed for '<module>'".
+    let (app_ready, bridge_plugin_registered) = {
+        let guard = tauri::ohos::APP.lock().ok();
+        let app_ref = guard.as_ref().and_then(|g| g.as_ref());
+        let app_ready = app_ref.is_some();
+        let bridge_plugin_registered = if let Some(ohos_app) = app_ref {
+            match ohos_app.register_plugin(GlobalShortcutBridgePlugin) {
+                Ok(()) => true,
+                Err(e) => {
+                    log::error!(
+                        "[global-shortcut] failed to register GlobalShortcutBridgePlugin: {}",
+                        e
+                    );
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        (app_ready, bridge_plugin_registered)
+    };
+
+    // Obtain GlobalShortcutClient from the global OHOS app
+    let (client, client_err) = {
+        let guard = tauri::ohos::APP.lock().ok();
+        let app_ref = guard.as_ref().and_then(|g| g.as_ref());
+        match app_ref {
+            Some(app) => match app.global_shortcut() {
+                Ok(c) => (Some(c), None),
+                Err(e) => (
+                    None,
+                    Some(format!("global_shortcut() returned Err: {:?}", e)),
+                ),
+            },
+            None => (
+                None,
+                Some("tauri::ohos::APP not ready (guard None)".to_string()),
+            ),
+        }
+    };
+
+    // Diagnostic: capture the three states that determine whether shortcut
+    // registration can reach the OS at ohos_setup time. This is the key log
+    // for diagnosing the "Ctrl+Shift+T no response" issue — if client is
+    // None here, every fire-and-forget register is silently skipped.
+    log::info!(
+        "[global-shortcut] ohos_setup: app_ready={}, bridge_plugin_registered={}, client={}, shortcut_count={}",
+        app_ready,
+        bridge_plugin_registered,
+        client.is_some(),
+        shortcuts.len()
+    );
+    if let Some(ref err) = client_err {
+        log::info!(
+            "[global-shortcut] ohos_setup: client is None because: {}",
+            err
+        );
+    }
+
+    // Register all shortcuts via fire-and-forget worker threads.
+    // The facade's async register() dispatches through the bridge TSFN to
+    // the ArkTS main thread; blocking on the main thread would deadlock,
+    // so we spawn a worker thread and block_on there.
+    if let Some(ref client) = client {
+        for shortcut in &shortcuts {
+            let modifier_names = to_ohos_modifier_names(shortcut.modifiers());
+            let key = shortcut.code().to_ohos_name().to_string();
+            let id = shortcut.id();
+            let client = client.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = futures_executor::block_on(
+                    client.register(id, &modifier_names, &key),
+                ) {
+                    log::error!("[global-shortcut] Failed to register shortcut {}: {:?}", id, e);
+                }
+            });
+        }
+    } else {
+        log::warn!(
+            "GlobalShortcutClient not initialized; skipping shortcut registration"
+        );
+    }
+
+    // Insert all shortcuts into the store regardless of registration result
+    for shortcut in shortcuts {
+        store.insert(
+            shortcut.id(),
+            RegisteredShortcut {
+                shortcut,
+                handler: None,
+            },
+        );
+    }
+
+    let shortcuts = Arc::new(Mutex::new(store));
+    let shortcuts_ = shortcuts.clone();
+    let app_handle = app.clone();
+
+    // Spawn thread to receive shortcut events from the facade.
+    // The event_receiver() returns a &'static Receiver, so it's safe to use
+    // in a 'static thread closure. This thread runs for the entire app lifetime.
+    if let Some(ref client) = client {
+        let receiver = client.event_receiver();
+        std::thread::spawn(move || {
+            while let Ok(event) = receiver.recv() {
+                // Clone needed data and drop the lock before calling user callbacks
+                // to avoid deadlock if the callback tries to acquire the same lock.
+                let entry = shortcuts_
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&event.id)
+                    .map(|reg| (reg.handler.clone(), reg.shortcut.clone()));
+
+                if let Some((handler_opt, shortcut)) = entry {
+                    let shortcut_event = ShortcutEvent {
+                        id: event.id,
+                        state: match event.state.as_str() {
+                            "Pressed" => ShortcutState::Pressed,
+                            "Released" => ShortcutState::Released,
+                            _ => ShortcutState::Pressed,
+                        },
+                    };
+
+                    if let Some(h) = &handler_opt {
+                        h(&app_handle, &shortcut, shortcut_event.clone());
+                    }
+                    if let Some(h) = &handler {
+                        h(&app_handle, &shortcut, shortcut_event);
+                    }
+                }
+            }
+        });
+    }
+
+    app.manage(GlobalShortcut { shortcuts, client });
 }
 
 impl<R: Runtime> GlobalShortcut<R> {
@@ -341,13 +497,20 @@ impl<R: Runtime> GlobalShortcut<R> {
 
         #[cfg(target_env = "ohos")]
         {
-            let ohos_modifiers = to_ohos_modifiers(shortcut.modifiers());
-
-            let ohos_key = openharmony_ability::ShortcutKey::from_name(shortcut.code().to_ohos_name())
-                .ok_or_else(|| Error::GlobalHotkey(format!("Unknown key: {}", shortcut.code().to_ohos_name())))?;
-
-            openharmony_ability::register_shortcut(&ohos_modifiers, ohos_key, id)
-                .map_err(|e| Error::GlobalHotkey(e))?;
+            let client = self.client.as_ref().ok_or_else(|| {
+                Error::GlobalHotkey("GlobalShortcutClient not initialized".to_string())
+            })?;
+            let modifier_names = to_ohos_modifier_names(shortcut.modifiers());
+            let key = shortcut.code().to_ohos_name().to_string();
+            let client = client.clone();
+            std::thread::spawn(move || {
+                log::info!("[global-shortcut] register ENTER id={}", id);
+                if let Err(e) =
+                    futures_executor::block_on(client.register(id, &modifier_names, &key))
+                {
+                    log::error!("[global-shortcut] Failed to register shortcut {}: {:?}", id, e);
+                }
+            });
         }
 
         self.shortcuts
@@ -375,12 +538,19 @@ impl<R: Runtime> GlobalShortcut<R> {
 
             #[cfg(target_env = "ohos")]
             {
-                let ohos_modifiers = to_ohos_modifiers(shortcut.modifiers());
-
-                let ohos_key = openharmony_ability::ShortcutKey::from_name(shortcut.code().to_ohos_name())
-                    .ok_or_else(|| Error::GlobalHotkey(format!("Unknown key: {}", shortcut.code().to_ohos_name())))?;
-                openharmony_ability::register_shortcut(&ohos_modifiers, ohos_key, shortcut.id())
-                    .map_err(|e| Error::GlobalHotkey(e))?;
+                if let Some(ref client) = self.client {
+                    let modifier_names = to_ohos_modifier_names(shortcut.modifiers());
+                    let key = shortcut.code().to_ohos_name().to_string();
+                    let sid = shortcut.id();
+                    let client = client.clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = futures_executor::block_on(
+                            client.register(sid, &modifier_names, &key),
+                        ) {
+                            log::error!("[global-shortcut] Failed to register shortcut {}: {:?}", sid, e);
+                        }
+                    });
+                }
             }
 
             shortcuts.insert(
@@ -462,8 +632,14 @@ impl<R: Runtime> GlobalShortcut<R> {
 
         #[cfg(target_env = "ohos")]
         {
-            if let Err(e) = openharmony_ability::unregister_shortcut(shortcut.id()) {
-                log::warn!("Failed to unregister shortcut {}: {}", shortcut.id(), e);
+            if let Some(ref client) = self.client {
+                let client = client.clone();
+                let sid = shortcut.id();
+                std::thread::spawn(move || {
+                    if let Err(e) = futures_executor::block_on(client.unregister(sid)) {
+                        log::error!("[global-shortcut] Failed to unregister shortcut {}: {:?}", sid, e);
+                    }
+                });
             }
         }
 
@@ -493,9 +669,15 @@ impl<R: Runtime> GlobalShortcut<R> {
 
         #[cfg(target_env = "ohos")]
         {
-            for s in &mapped_shortcuts {
-                if let Err(e) = openharmony_ability::unregister_shortcut(s.id()) {
-                    log::warn!("Failed to unregister shortcut {}: {}", s.id(), e);
+            if let Some(ref client) = self.client {
+                for s in &mapped_shortcuts {
+                    let client = client.clone();
+                    let sid = s.id();
+                    std::thread::spawn(move || {
+                        if let Err(e) = futures_executor::block_on(client.unregister(sid)) {
+                            log::error!("[global-shortcut] Failed to unregister shortcut {}: {:?}", sid, e);
+                        }
+                    });
                 }
             }
         }
@@ -524,8 +706,15 @@ impl<R: Runtime> GlobalShortcut<R> {
         #[cfg(target_env = "ohos")]
         {
             let _ = &hotkeys; // suppress unused warning on OHOS
-            openharmony_ability::unregister_all_shortcuts()
-                .map_err(|e| Error::GlobalHotkey(e.to_string()))
+            if let Some(ref client) = self.client {
+                let client = client.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = futures_executor::block_on(client.unregister_all()) {
+                        log::error!("[global-shortcut] Failed to unregister all shortcuts: {:?}", e);
+                    }
+                });
+            }
+            Ok(())
         }
     }
 
@@ -759,84 +948,7 @@ impl<R: Runtime> Builder<R> {
 
                 // ─── OHOS: use openharmony-ability ───────────────────────
                 #[cfg(target_env = "ohos")]
-                {
-                    // Initialize the forwarder (must be called before register_shortcut)
-                    let app_clone = app.clone();
-                    openharmony_ability::init_forwarder(move |task| {
-                        let _ = app_clone.run_on_main_thread(move || task());
-                    });
-
-                    for shortcut in shortcuts {
-                        let ohos_modifiers = to_ohos_modifiers(shortcut.modifiers());
-
-                        if let Some(ohos_key) =
-                            openharmony_ability::ShortcutKey::from_name(shortcut.code().to_ohos_name())
-                        {
-                            if openharmony_ability::register_shortcut(
-                                &ohos_modifiers,
-                                ohos_key,
-                                shortcut.id(),
-                            ).is_ok() {
-                                store.insert(
-                                    shortcut.id(),
-                                    RegisteredShortcut {
-                                        shortcut,
-                                        handler: None,
-                                    },
-                                );
-                            } else {
-                                log::warn!("Failed to register shortcut: {}", shortcut.id());
-                            }
-                        }
-                    }
-
-                    let shortcuts = Arc::new(Mutex::new(store));
-                    let shortcuts_ = shortcuts.clone();
-                    let app_handle = app.clone();
-
-                    // Spawn thread to receive shortcut events from openharmony-ability.
-                    // This thread runs for the entire app lifetime with no shutdown signal.
-                    // It is cleaned up by the OS when the process exits. The blocking recv()
-                    // loop terminates only when the sender side is dropped (i.e., on process
-                    // teardown). For a graceful shutdown, call unregister_all() before exit.
-                    std::thread::spawn(move || {
-                        let receiver = openharmony_ability::shortcut_event_receiver();
-                        while let Ok(event) = receiver.recv() {
-                            // Clone needed data and drop the lock before calling user callbacks
-                            // to avoid deadlock if the callback tries to acquire the same lock.
-                            let entry = shortcuts_
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .get(&event.id)
-                                .map(|reg| (reg.handler.clone(), reg.shortcut.clone()));
-
-                            if let Some((handler_opt, shortcut)) = entry {
-                                let shortcut_event = ShortcutEvent {
-                                    id: event.id,
-                                    state: match event.state {
-                                        openharmony_ability::ShortcutState::Pressed => {
-                                            ShortcutState::Pressed
-                                        }
-                                        openharmony_ability::ShortcutState::Released => {
-                                            ShortcutState::Released
-                                        }
-                                    },
-                                };
-
-                                if let Some(h) = &handler_opt {
-                                    h(&app_handle, &shortcut, shortcut_event.clone());
-                                }
-                                if let Some(h) = &handler {
-                                    h(&app_handle, &shortcut, shortcut_event);
-                                }
-                            }
-                        }
-                    });
-
-                    app.manage(GlobalShortcut {
-                        shortcuts,
-                    });
-                }
+                ohos_setup(app.clone(), shortcuts, handler, store);
 
                 Ok(())
             })
