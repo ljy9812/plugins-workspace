@@ -129,17 +129,19 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         let cache = self.state::<WindowStateCache>();
         let mut state = cache.0.lock().unwrap();
 
-        // OHOS: skip update_state() — it calls window_getter! (inner_size,
-        // outer_position, is_fullscreen, etc.) which sends a message to the
-        // main thread and blocks on rx.recv(). From a tokio worker thread
-        // (save_window_state is async fn), this goes through
-        // proxy.send_event + waker TSFN. The waker may not trigger a prompt
-        // MainEvent::UserEvent drain, leaving the worker blocked indefinitely
-        // → "failed to receive message from webview".
-        //
-        // The cache is already kept up to date by the Resized/Moved event
-        // handlers (which run on the main thread and only update width/height
-        // and x/y). No re-query is needed before writing to disk.
+        // OHOS: skip the non-OHOS update_state() loop. update_state() calls
+        // is_maximized()/is_minimized(), which on tao OHOS are synchronous
+        // NAPI calls (is_window_maximized/is_window_minimized) that block the
+        // main thread during window transitions — from a tokio worker thread
+        // (save_window_state) this risks appfreeze / "failed to receive message
+        // from webview". The other queries in update_state (inner_size,
+        // outer_position, is_fullscreen, is_decorated, is_visible) are NOT
+        // blocking on OHOS — they read the window_rect cache (RwLock read,
+        // non-blocking, worker-thread-safe) — but update_state runs them as one
+        // batch, so the maximized/minimized hazard forces skipping the whole
+        // call. size+position are refreshed in the OHOS-specific branch below
+        // instead of relying on Moved/Resized event handlers alone (see comment
+        // there for why event-driven caching is insufficient on OHOS).
         #[cfg(not(target_env = "ohos"))]
         for (label, s) in state.iter_mut() {
             let window = if let Some(map) = &plugin_state.map_label {
@@ -154,21 +156,25 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
                 window.update_state(s, flags)?;
             }
         }
-        // OHOS: tao emits `windowRectChange` (MOVE/DRAG) as `Event::ContentRectChange`
-        // (lifecycle.rs window_rect_change), NOT `WindowEvent::Moved`. So the Moved handler
-        // above — the only place `state.x/y` are refreshed post-creation — never fires on
-        // OHOS, leaving them at the creation-time default. save would then write that stale
-        // position and restore_state yanks the window back to the creation spot
-        // ("save resets position"). `outer_position()` reads the `window_rect` cache that
-        // ArkTS keeps current via `on("windowRectChange", MOVE)` during drag (non-blocking,
-        // no main-thread recv), so refresh position here, mirroring the non-OHOS label
-        // mapping. Other fields (size via the Resized handler, maximized on close) have
-        // their own OHOS-safe paths; only POSITION is confirmed broken.
+        // OHOS save 分支：对每个 tracked window 无条件刷新 size + position（不再门控于 flags，
+        // 也不再临时 gate 于主窗口）。
+        //
+        // 理由 1（为何去掉 flags 门控）：serde 序列化整个 WindowState struct（无
+        // skip_serializing_if），即使调用方只传 SIZE flag，陈旧 x/y 也会一起落盘；restore 时
+        // 若 state_flags=all 就会把 (0,0) 应用到窗口。故 size 与 position 必须在 save 时一起
+        // 刷新，与 flags 无关。
+        //
+        // 理由 2（为何用 getter 而非依赖 Moved/Resized 事件缓存）：tao OHOS 把 windowRectChange
+        // (MOVE/DRAG) 派发为 Event::ContentRectChange 而非 WindowEvent::Moved，Moved handler 从不
+        // 触发，position 停在创建默认值；size 虽由 Resized handler 刷新，但 save 与事件存在竞态
+        // 可能落盘旧值。outer_position()/inner_size() 直接读 per-window rect 缓存（RwLock read，
+        // 非阻塞，worker 线程安全），用它在此刷新得到最新值。
+        //
+        // 理由 3（为何不再 gate 于主窗口）：Phase 2 落地后 tao 的 inner_size/outer_position 走
+        // window_rect_for(window_id)（design.md D5），每个窗口读自身 rect，互不干扰。Phase 1 的
+        // `if window.label() != "main" { continue; }` 临时 gate 已删除——所有 tracked window 均刷新。
         #[cfg(target_env = "ohos")]
         for (label, s) in state.iter_mut() {
-            if !flags.contains(StateFlags::POSITION) {
-                continue;
-            }
             let window = if let Some(map) = &plugin_state.map_label {
                 windows
                     .iter()
@@ -177,9 +183,17 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
                 windows.get(label)
             };
             if let Some(window) = window {
+                // 无条件刷新 position（与 flags 无关，见理由 1）
                 if let Ok(pos) = window.outer_position() {
                     s.x = pos.x;
                     s.y = pos.y;
+                }
+                // 无条件刷新 size（width/height > 0 时，避免落盘 0×0）
+                if let Ok(size) = window.inner_size() {
+                    if size.width > 0 && size.height > 0 {
+                        s.width = size.width;
+                        s.height = size.height;
+                    }
                 }
             }
         }
