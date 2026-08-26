@@ -122,11 +122,53 @@ pub trait AppHandleExt {
 
 impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
     fn save_window_state(&self, flags: StateFlags) -> Result<()> {
+        // The OHOS path below saves all tracked state and ignores `flags`.
+        #[cfg(target_env = "ohos")]
+        let _ = &flags;
         let app_dir = self.path().app_config_dir()?;
         let plugin_state = self.state::<PluginState>();
         let state_path = app_dir.join(&plugin_state.filename);
         let windows = self.webview_windows();
         let cache = self.state::<WindowStateCache>();
+
+        // OHOS: collect fresh geometry BEFORE taking the cache lock.
+        //
+        // outer_position()/inner_size() on OHOS are NOT lock-free reads: the
+        // WryWindowDispatcher transports each query to the main thread and
+        // blocks on mpmc recv() for the reply. Holding the cache lock across
+        // that round-trip deadlocks when the main thread is concurrently in
+        // the Resized/Moved handler waiting for this same lock — worker holds
+        // cache + waits for main, main waits for cache (faultlog 2026-08-25
+        // ×3: save_window_state→outer_position→recv vs on_window_event→
+        // cache.lock, permanent THREAD_BLOCK_6S). Collect unlocked first:
+        // blocking recv is then harmless because the main thread is free to
+        // answer.
+        #[cfg(target_env = "ohos")]
+        let fresh_geometry: Vec<(String, Option<(i32, i32)>, Option<(u32, u32)>)> = {
+            // Short lock #1: snapshot tracked labels only (no dispatcher calls).
+            let tracked: Vec<String> = cache.0.lock().unwrap().keys().cloned().collect();
+            // Unlocked collection: dispatcher round-trips may block on the
+            // main thread, but no lock is held while they do.
+            let mut fresh = Vec::with_capacity(tracked.len());
+            for (window_label, window) in &windows {
+                let label: String = plugin_state
+                    .map_label
+                    .as_ref()
+                    .map(|map| map(window_label).to_string())
+                    .unwrap_or_else(|| window_label.clone());
+                if !tracked.contains(&label) {
+                    continue;
+                }
+                let position = window.outer_position().ok().map(|pos| (pos.x, pos.y));
+                let size = window
+                    .inner_size()
+                    .ok()
+                    .and_then(|size| (size.width > 0 && size.height > 0).then_some((size.width, size.height)));
+                fresh.push((label, position, size));
+            }
+            fresh
+        };
+
         let mut state = cache.0.lock().unwrap();
 
         // OHOS: skip the non-OHOS update_state() loop. update_state() calls
@@ -135,13 +177,15 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         // main thread during window transitions — from a tokio worker thread
         // (save_window_state) this risks appfreeze / "failed to receive message
         // from webview". The other queries in update_state (inner_size,
-        // outer_position, is_fullscreen, is_decorated, is_visible) are NOT
-        // blocking on OHOS — they read the window_rect cache (RwLock read,
-        // non-blocking, worker-thread-safe) — but update_state runs them as one
-        // batch, so the maximized/minimized hazard forces skipping the whole
-        // call. size+position are refreshed in the OHOS-specific branch below
-        // instead of relying on Moved/Resized event handlers alone (see comment
-        // there for why event-driven caching is insufficient on OHOS).
+        // outer_position, is_fullscreen, is_decorated, is_visible) are also NOT
+        // free on OHOS: the tao layer reads the window_rect cache, but the
+        // runtime-wry dispatcher transports each query to the main thread with
+        // a blocking recv() — so update_state runs them as one batch under the
+        // cache lock, which is why the OHOS branch collects geometry unlocked
+        // (see fresh_geometry) instead. size+position are refreshed in the
+        // OHOS-specific branch below instead of relying on Moved/Resized event
+        // handlers alone (see comment there for why event-driven caching is
+        // insufficient on OHOS).
         #[cfg(not(target_env = "ohos"))]
         for (label, s) in state.iter_mut() {
             let window = if let Some(map) = &plugin_state.map_label {
@@ -167,39 +211,40 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         // 理由 2（为何用 getter 而非依赖 Moved/Resized 事件缓存）：tao OHOS 把 windowRectChange
         // (MOVE/DRAG) 派发为 Event::ContentRectChange 而非 WindowEvent::Moved，Moved handler 从不
         // 触发，position 停在创建默认值；size 虽由 Resized handler 刷新，但 save 与事件存在竞态
-        // 可能落盘旧值。outer_position()/inner_size() 直接读 per-window rect 缓存（RwLock read，
-        // 非阻塞，worker 线程安全），用它在此刷新得到最新值。
+        // 可能落盘旧值。注意：outer_position()/inner_size() 的 tao 底层虽读 per-window rect 缓存，
+        // 但 runtime-wry dispatcher 的传输层是"发消息到主线程 + recv 等回复"的阻塞环回——
+        // 因此几何采集必须在 cache 锁外完成（见上方 fresh_geometry 块），采集结果在锁内写回。
         //
         // 理由 3（为何不再 gate 于主窗口）：Phase 2 落地后 tao 的 inner_size/outer_position 走
         // window_rect_for(window_id)（design.md D5），每个窗口读自身 rect，互不干扰。Phase 1 的
         // `if window.label() != "main" { continue; }` 临时 gate 已删除——所有 tracked window 均刷新。
         #[cfg(target_env = "ohos")]
         for (label, s) in state.iter_mut() {
-            let window = if let Some(map) = &plugin_state.map_label {
-                windows
-                    .iter()
-                    .find_map(|(l, window)| (map(l) == label).then_some(window))
-            } else {
-                windows.get(label)
-            };
-            if let Some(window) = window {
-                // 无条件刷新 position（与 flags 无关，见理由 1）
-                if let Ok(pos) = window.outer_position() {
-                    s.x = pos.x;
-                    s.y = pos.y;
+            if let Some((_, position, size)) = fresh_geometry.iter().find(|(l, _, _)| l == label) {
+                if let Some((x, y)) = position {
+                    s.x = *x;
+                    s.y = *y;
                 }
-                // 无条件刷新 size（width/height > 0 时，避免落盘 0×0）
-                if let Ok(size) = window.inner_size() {
-                    if size.width > 0 && size.height > 0 {
-                        s.width = size.width;
-                        s.height = size.height;
-                    }
+                if let Some((width, height)) = size {
+                    s.width = *width;
+                    s.height = *height;
                 }
             }
         }
 
+        // Serialize while holding the cache lock, then release it before disk I/O.
+        // save_window_state runs on a tokio worker; the main thread's Resized
+        // handler locks this same cache, and holding it across fs::write blocks
+        // that handler for the duration of a synchronous disk write — observed
+        // as a transient appfreeze (THREAD_BLOCK_6S) during high-frequency
+        // window churn on OHOS. Concurrent saves may now interleave their file
+        // writes (last writer wins), which is acceptable for a best-effort
+        // state snapshot.
+        let serialized = serde_json::to_vec_pretty(&*state)?;
+        drop(state);
+
         create_dir_all(app_dir)?;
-        std::fs::write(state_path, serde_json::to_vec_pretty(&*state)?)?;
+        std::fs::write(state_path, serialized)?;
 
         Ok(())
     }
@@ -231,124 +276,201 @@ impl<R: Runtime> WindowExt for Window<R> {
 
         let restoring_window_state = self.state::<RestoringWindowState>();
         let _restoring_window_lock = restoring_window_state.0.lock().unwrap();
-        let cache = self.state::<WindowStateCache>();
-        let mut c = cache.0.lock().unwrap();
 
-        // OHOS: the window is created by the OS ability (at a default position)
-        // before this plugin's on_window_ready fires. The Moved event from window
-        // creation overwrites the cache (populated from file during setup) with
-        // the default position. Re-read the saved state from the file to restore
-        // the correct position. (Desktop platforms are unaffected: tao controls
-        // window creation, so Moved fires after restore_state, where the
-        // RestoringWindowState lock prevents cache overwrite.)
+        // OHOS: same lock discipline as save_window_state's OHOS fix — the
+        // cache lock must never be held across a window_getter! round-trip
+        // (available_monitors does rx.recv() on the main thread) or disk I/O
+        // when the caller is a tokio worker (the cmd.rs async command, no
+        // main-thread short-circuit): the main thread's Resized/Moved handlers
+        // take cache.lock() and would mutually block (THREAD_BLOCK_6S).
+        // Triggered by the default StateFlags::all() which includes POSITION.
+        // Three phases: unlocked file read → short locked snapshot/writeback →
+        // unlocked window operations (all setters are fire-and-forget
+        // dispatches, safe from any thread).
+        //
+        // Desktop platforms are unaffected (tao controls window creation, the
+        // event loop executes getters inline); their original code path is
+        // kept byte-for-byte below.
         #[cfg(target_env = "ohos")]
         {
+            // Phase 0 (no lock): re-read the saved state from the file. The
+            // window is created by the OS ability (at a default position)
+            // before this plugin's on_window_ready fires; the Moved event from
+            // window creation overwrites the cache (populated from file during
+            // setup) with the default position, so the file is the source of
+            // truth here. Reading it inside the cache lock would be lock-held
+            // disk I/O (same class as the fixed fs::write-in-lock on save).
+            let mut file_cache: Option<HashMap<String, WindowState>> = None;
             if let Ok(app_dir) = self.app_handle().path().app_config_dir() {
                 let state_path = app_dir.join(&plugin_state.filename);
                 if state_path.exists() {
                     if let Ok(data) = std::fs::read(&state_path) {
-                        if let Ok(file_cache) =
-                            serde_json::from_slice::<HashMap<String, WindowState>>(&data)
-                        {
-                            if let Some(saved) = file_cache.get(label) {
-                                c.insert(label.to_string(), saved.clone());
-                            }
+                        file_cache =
+                            serde_json::from_slice::<HashMap<String, WindowState>>(&data).ok();
+                    }
+                }
+            }
+
+            // Phase 1 (short lock): write the file value back into the cache,
+            // then snapshot the state to restore (or seed defaults when there
+            // is none — the non-OHOS else-branch queries the window here via
+            // window_getter! calls, which must stay off worker threads on OHOS;
+            // the Resized/Moved handlers populate real values on subsequent
+            // events).
+            let cache = self.state::<WindowStateCache>();
+            let saved = {
+                let mut c = cache.0.lock().unwrap();
+                if let Some(saved) = file_cache.as_ref().and_then(|fc| fc.get(label)) {
+                    c.insert(label.to_string(), saved.clone());
+                }
+                let saved = c
+                    .get(label)
+                    .filter(|state| state != &&WindowState::default())
+                    .cloned();
+                if saved.is_none() {
+                    c.insert(label.to_string(), WindowState::default());
+                }
+                saved
+            }; // cache lock released
+
+            // Phase 2 (no lock): apply the state to the window.
+            let mut should_show = true;
+
+            if let Some(state) = saved {
+                if flags.contains(StateFlags::DECORATIONS) {
+                    #[cfg(desktop)]
+                    self.set_decorations(state.decorated)?;
+                }
+
+                if flags.contains(StateFlags::POSITION) {
+                    let position = (state.x, state.y).into();
+                    let size = (state.width, state.height).into();
+                    for m in self.available_monitors()? {
+                        if m.intersects(position, size) {
+                            self.set_position(PhysicalPosition {
+                                x: if state.maximized { state.prev_x } else { state.x },
+                                y: if state.maximized { state.prev_y } else { state.y },
+                            })?;
                         }
                     }
                 }
+
+                if flags.contains(StateFlags::SIZE) {
+                    self.set_size(PhysicalSize {
+                        width: state.width,
+                        height: state.height,
+                    })?;
+                }
+
+                if flags.contains(StateFlags::MAXIMIZED) && state.maximized {
+                    #[cfg(desktop)]
+                    self.maximize()?;
+                }
+
+                if flags.contains(StateFlags::FULLSCREEN) {
+                    #[cfg(desktop)]
+                    self.set_fullscreen(state.fullscreen)?;
+                }
+
+                should_show = state.visible;
             }
+
+            if flags.contains(StateFlags::VISIBLE) && should_show {
+                self.show()?;
+                self.set_focus()?;
+            }
+
+            Ok(())
         }
 
-        let mut should_show = true;
-
-        if let Some(state) = c
-            .get(label)
-            .filter(|state| state != &&WindowState::default())
+        #[cfg(not(target_env = "ohos"))]
         {
-            if flags.contains(StateFlags::DECORATIONS) {
-                #[cfg(desktop)]
-                self.set_decorations(state.decorated)?;
-            }
+            let cache = self.state::<WindowStateCache>();
+            let mut c = cache.0.lock().unwrap();
 
-            if flags.contains(StateFlags::POSITION) {
-                let position = (state.x, state.y).into();
-                let size = (state.width, state.height).into();
-                for m in self.available_monitors()? {
-                    if m.intersects(position, size) {
-                        self.set_position(PhysicalPosition {
-                            x: if state.maximized { state.prev_x } else { state.x },
-                            y: if state.maximized { state.prev_y } else { state.y },
-                        })?;
+            let mut should_show = true;
+
+            if let Some(state) = c
+                .get(label)
+                .filter(|state| state != &&WindowState::default())
+            {
+                if flags.contains(StateFlags::DECORATIONS) {
+                    #[cfg(desktop)]
+                    self.set_decorations(state.decorated)?;
+                }
+
+                if flags.contains(StateFlags::POSITION) {
+                    let position = (state.x, state.y).into();
+                    let size = (state.width, state.height).into();
+                    for m in self.available_monitors()? {
+                        if m.intersects(position, size) {
+                            self.set_position(PhysicalPosition {
+                                x: if state.maximized { state.prev_x } else { state.x },
+                                y: if state.maximized { state.prev_y } else { state.y },
+                            })?;
+                        }
                     }
                 }
+
+                if flags.contains(StateFlags::SIZE) {
+                    self.set_size(PhysicalSize {
+                        width: state.width,
+                        height: state.height,
+                    })?;
+                }
+
+                if flags.contains(StateFlags::MAXIMIZED) && state.maximized {
+                    #[cfg(desktop)]
+                    self.maximize()?;
+                }
+
+                if flags.contains(StateFlags::FULLSCREEN) {
+                    #[cfg(desktop)]
+                    self.set_fullscreen(state.fullscreen)?;
+                }
+
+                should_show = state.visible;
+            } else {
+                let mut metadata = WindowState::default();
+
+                if flags.contains(StateFlags::SIZE) {
+                    let size = self.inner_size()?;
+                    metadata.width = size.width;
+                    metadata.height = size.height;
+                }
+
+                if flags.contains(StateFlags::POSITION) {
+                    let pos = self.outer_position()?;
+                    metadata.x = pos.x;
+                    metadata.y = pos.y;
+                }
+
+                if flags.contains(StateFlags::MAXIMIZED) {
+                    metadata.maximized = self.is_maximized()?;
+                }
+
+                if flags.contains(StateFlags::VISIBLE) {
+                    metadata.visible = self.is_visible()?;
+                }
+
+                if flags.contains(StateFlags::DECORATIONS) {
+                    metadata.decorated = self.is_decorated()?;
+                }
+
+                if flags.contains(StateFlags::FULLSCREEN) {
+                    metadata.fullscreen = self.is_fullscreen()?;
+                }
+
+                c.insert(label.into(), metadata);
             }
 
-            if flags.contains(StateFlags::SIZE) {
-                self.set_size(PhysicalSize {
-                    width: state.width,
-                    height: state.height,
-                })?;
+            if flags.contains(StateFlags::VISIBLE) && should_show {
+                self.show()?;
+                self.set_focus()?;
             }
 
-            if flags.contains(StateFlags::MAXIMIZED) && state.maximized {
-                #[cfg(desktop)]
-                self.maximize()?;
-            }
-
-            if flags.contains(StateFlags::FULLSCREEN) {
-                #[cfg(desktop)]
-                self.set_fullscreen(state.fullscreen)?;
-            }
-
-            should_show = state.visible;
-        } else {
-            let mut metadata = WindowState::default();
-
-            // OHOS: skip window_getter! calls (inner_size, outer_position,
-            // is_maximized, etc.) — they block on rx.recv() from a tokio
-            // worker thread. Default values (0×0, not maximized, etc.) are
-            // acceptable; the Resized/Moved event handlers will populate
-            // the cache with real values on subsequent events.
-            #[cfg(not(target_env = "ohos"))]
-            {
-            if flags.contains(StateFlags::SIZE) {
-                let size = self.inner_size()?;
-                metadata.width = size.width;
-                metadata.height = size.height;
-            }
-
-            if flags.contains(StateFlags::POSITION) {
-                let pos = self.outer_position()?;
-                metadata.x = pos.x;
-                metadata.y = pos.y;
-            }
-
-            if flags.contains(StateFlags::MAXIMIZED) {
-                metadata.maximized = self.is_maximized()?;
-            }
-
-            if flags.contains(StateFlags::VISIBLE) {
-                metadata.visible = self.is_visible()?;
-            }
-
-            if flags.contains(StateFlags::DECORATIONS) {
-                metadata.decorated = self.is_decorated()?;
-            }
-
-            if flags.contains(StateFlags::FULLSCREEN) {
-                metadata.fullscreen = self.is_fullscreen()?;
-            }
-            } // end #[cfg(not(target_env = "ohos"))]
-
-            c.insert(label.into(), metadata);
+            Ok(())
         }
-
-        if flags.contains(StateFlags::VISIBLE) && should_show {
-            self.show()?;
-            self.set_focus()?;
-        }
-
-        Ok(())
     }
 }
 
