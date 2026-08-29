@@ -89,20 +89,55 @@ export class BiometricPlugin extends Plugin {
     try {
       const args: AuthArgs = JSON.parse(invoke.parseArgs()) as AuthArgs;
 
-      // Determine which auth types to use
-      const authTypes: userAuth.UserAuthType[] = [
-        userAuth.UserAuthType.FACE,
-        userAuth.UserAuthType.FINGERPRINT
-      ];
+      // Widget auth requires EXACTLY ONE biometric authType — passing both
+      // FACE + FINGERPRINT is rejected with "authType check fail:0" → ret:8
+      // ("check permission and auth widget param failed"). Probe which type
+      // the device actually supports (mirrors doStatus) and use the first
+      // available one; the system auto-falls-back to PIN on biometric failure.
+      let authType: userAuth.UserAuthType;
+      let faceAvailable = false;
+      try {
+        userAuth.getAvailableStatus(userAuth.UserAuthType.FACE, userAuth.AuthTrustLevel.ATL1);
+        faceAvailable = true;
+      } catch (e) {
+        faceAvailable = false;
+      }
+      let fingerprintAvailable = false;
+      try {
+        userAuth.getAvailableStatus(userAuth.UserAuthType.FINGERPRINT, userAuth.AuthTrustLevel.ATL1);
+        fingerprintAvailable = true;
+      } catch (e) {
+        fingerprintAvailable = false;
+      }
+      if (faceAvailable) {
+        authType = userAuth.UserAuthType.FACE;
+      } else if (fingerprintAvailable) {
+        authType = userAuth.UserAuthType.FINGERPRINT;
+      } else {
+        invoke.reject('biometryNotAvailable');
+        return;
+      }
 
       const authParam: userAuth.AuthParam = {
         challenge: new Uint8Array([0]),
-        authType: authTypes,
+        authType: [authType],
         authTrustLevel: userAuth.AuthTrustLevel.ATL1
       };
 
+      // Widget auth (API 18+) needs widgetParam.uiContext to display the auth
+      // dialog in modal-application mode bound to this Ability's window. Without
+      // it the system logs "BeginWidgetAuth has context: 0 / AuthWidget fail
+      // ret:8" and no popup appears. UIAbilityContext extends Context, so
+      // this.context (set by PluginManager.setContext) satisfies the
+      // widgetParam.uiContext?: Context field directly.
+      if (!this.context) {
+        invoke.reject('authenticate failed: Plugin context not initialized');
+        return;
+      }
+
       const widgetParam: userAuth.WidgetParam = {
-        title: args.title != null ? args.title : (args.reason != null ? args.reason : 'Authentication')
+        title: args.title != null ? args.title : (args.reason != null ? args.reason : 'Authentication'),
+        uiContext: this.context
       };
 
       const authInstance = userAuth.getUserAuthInstance(authParam, widgetParam);

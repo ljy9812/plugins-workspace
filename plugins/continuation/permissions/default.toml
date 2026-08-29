@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+[default]
+description = """
+Continuation permissions.
+Enables the is_continuation_restore, get_continuation_data and set_continuation_data commands.
+"""
+permissions = [
+  "allow-is-continuation-restore",
+  "allow-get-continuation-data",
+  "allow-set-continuation-data",
+]

@@ -66,6 +66,9 @@ tar = "0.4"
 flate2 = "1"
 osakit = { version = "0.3", features = ["full"] }
 
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["updater"] }
+
 [features]
 default = ["rustls-tls", "zip"]
 zip = ["dep:zip", "dep:tar", "dep:flate2"]

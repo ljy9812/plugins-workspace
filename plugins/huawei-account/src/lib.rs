@@ -44,6 +44,29 @@ impl Builder {
                 ohos::silent_login,
                 ohos::logout,
             ])
+            .setup(|_app, _api| {
+                // Register the Rust-side bridge plugin (AccountBridgePlugin, id
+                // "ohos.account") BEFORE any login/silent_login/logout command can
+                // dispatch through it. The setup closure runs at Builder::build()
+                // time, which (per tauri-macros/mobile.rs:96-101) is AFTER
+                // `tauri::ohos::APP` is set, so the app handle is available. Mirrors
+                // the global-shortcut/accessibility pattern: APP-None is unreachable
+                // here, guarded only against mutex poisoning; register_plugin is
+                // non-idempotent (returns Err on duplicate) so failures are
+                // log-only, never propagate.
+                use openharmony_ability::AccountBridgePlugin;
+                if let Ok(guard) = tauri::ohos::APP.lock() {
+                    if let Some(ohos_app) = guard.as_ref() {
+                        if let Err(e) = ohos_app.register_plugin(AccountBridgePlugin) {
+                            log::error!(
+                                "[huawei-account] failed to register AccountBridgePlugin: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            })
             .build()
     }
 

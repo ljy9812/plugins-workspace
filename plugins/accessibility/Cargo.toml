@@ -1,13 +1,13 @@
 [package]
-name = "tauri-plugin-huawei-account"
+name = "tauri-plugin-accessibility"
 version = "0.1.0"
-description = "Huawei account one-tap login for Tauri applications (OpenHarmony)."
+description = "Accessibility queries (font scale, screen reader state) for Tauri applications (OpenHarmony)."
 authors = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
 repository = { workspace = true }
-links = "tauri-plugin-huawei-account"
+links = "tauri-plugin-accessibility"
 
 [package.metadata.platforms.support]
 windows = { level = "none", notes = "returns unsupported" }
@@ -15,7 +15,7 @@ linux = { level = "none", notes = "returns unsupported" }
 macos = { level = "none", notes = "returns unsupported" }
 android = { level = "none", notes = "" }
 ios = { level = "none", notes = "" }
-ohos = { level = "partial", notes = "login/silent_login/logout via Account Kit; profile fields empty (option A)" }
+ohos = { level = "partial", notes = "font scale + screen reader state queries and state-change event" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
@@ -27,8 +27,6 @@ tauri = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 
-# OHOS: bridge to openharmony-ability's `account` feature (p1). Cargo feature
-# unification enables `account` across the whole build, so `HuaweiAccount` is
-# available without touching the tauri core crate's openharmony-ability dep.
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["account"] }
+openharmony-ability-plugin-accessibility = { path = "../../../openharmony-ability/crates/plugin-accessibility" }
+futures-executor = "0.3"

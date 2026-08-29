@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+[default]
+description = """
+Accessibility query permissions.
+Enables the get_font_scale, is_screen_reader_enabled and is_touch_explore_enabled commands.
+"""
+permissions = [
+  "allow-get-font-scale",
+  "allow-is-screen-reader-enabled",
+  "allow-is-touch-explore-enabled",
+]
