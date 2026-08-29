@@ -168,7 +168,7 @@ pub(crate) async fn delete_channel<R: Runtime>(
     notification.delete_channel(id)
 }
 
-#[cfg(target_env = "ohos")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 #[command]
 pub(crate) async fn list_channels<R: Runtime>(
     _app: AppHandle<R>,

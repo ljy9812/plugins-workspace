@@ -20,6 +20,9 @@ It allows all notification related features.
 - `allow-get-pending`
 - `allow-remove-active`
 - `allow-get-active`
+- `allow-check-permissions`
+- `allow-show`
+- `allow-batch`
 - `allow-list-channels`
 - `allow-delete-channel`
 - `allow-create-channel`
@@ -32,6 +35,32 @@ It allows all notification related features.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`notification:allow-batch`
+
+</td>
+<td>
+
+Enables the batch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notification:deny-batch`
+
+</td>
+<td>
+
+Denies the batch command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -55,6 +84,32 @@ Enables the cancel command without any pre-configured scope.
 <td>
 
 Denies the cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notification:allow-check-permissions`
+
+</td>
+<td>
+
+Enables the check_permissions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notification:deny-check-permissions`
+
+</td>
+<td>
+
+Denies the check_permissions command without any pre-configured scope.
 
 </td>
 </tr>
@@ -393,6 +448,32 @@ Enables the request_permission command without any pre-configured scope.
 <td>
 
 Denies the request_permission command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notification:allow-show`
+
+</td>
+<td>
+
+Enables the show command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notification:deny-show`
+
+</td>
+<td>
+
+Denies the show command without any pre-configured scope.
 
 </td>
 </tr>

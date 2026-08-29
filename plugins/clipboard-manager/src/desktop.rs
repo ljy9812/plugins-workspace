@@ -51,7 +51,7 @@ impl<R: Runtime> Clipboard<R> {
         }
     }
 
-    pub async fn write_image(&self, rgba: &[u8], width: u32, height: u32) -> crate::Result<()> {
+    pub fn write_image(&self, image: &Image<'_>) -> crate::Result<()> {
         match &self.clipboard {
             Ok(clipboard) => clipboard
                 .lock()
@@ -59,9 +59,9 @@ impl<R: Runtime> Clipboard<R> {
                 .as_mut()
                 .unwrap()
                 .set_image(ImageData {
-                    bytes: Cow::Borrowed(rgba),
-                    width: width as usize,
-                    height: height as usize,
+                    bytes: Cow::Borrowed(image.rgba()),
+                    width: image.width() as usize,
+                    height: image.height() as usize,
                 })
                 .map_err(Into::into),
             Err(e) => Err(crate::Error::Clipboard(e.to_string())),

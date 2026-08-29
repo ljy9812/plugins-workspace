@@ -93,7 +93,6 @@ export class GeolocationPlugin extends Plugin {
    */
   onForeground(): void {
     if (this.pendingPermissionInvoke != null && !this.permissionSettled) {
-      console.info('[GEO-DIAG] onForeground: settling pending permission request');
       this.settlePermissions('onForeground');
     }
   }
@@ -260,7 +259,6 @@ export class GeolocationPlugin extends Plugin {
     // requestPermissionsFromUser needs the UIAbilityContext, injected by
     // PluginManager.setContext() from the host EntryAbility. When null
     // (e.g. standalone shim build), degrade to returning the current state.
-    console.info('[GEO-DIAG] doRequestPermissions enter, context=' + (this.context != null ? 'non-null' : 'null'));
     if (this.context == null) {
       const status = this.queryPermissionStatus();
       invoke.resolve(JSON.stringify(status));
@@ -271,10 +269,10 @@ export class GeolocationPlugin extends Plugin {
 
   /**
    * Three-path permission request with fallback settlement:
-   *   路1 (onForeground): ability returns to foreground after dialog → settle.
-   *   路2 (selfPermissionStateChange event): system fires permission state
+   *   Path 1 (onForeground): ability returns to foreground after dialog → settle.
+   *   Path 2 (selfPermissionStateChange event): system fires permission state
    *       change callback → settle.
-   *   路3 (setTimeout 60s): safety net for foreground-only scenarios → settle.
+   *   Path 3 (setTimeout 60s): safety net for foreground-only scenarios → settle.
    *   Original Promise .then/.catch also settles (if it ever resolves).
    * All settlement paths read the real permission state via
    * queryPermissionStatus(), not the possibly-stale authResults array.
@@ -285,26 +283,23 @@ export class GeolocationPlugin extends Plugin {
     this.permissionSettled = false;
     this.permissionStateList = [PERMISSION_FINE, PERMISSION_APPROX];
 
-    // 路2: Register selfPermissionStateChange listener (API 18+).
+    // Path 2: Register selfPermissionStateChange listener (API 18+).
     // Wrap in try/catch — duplicate registration throws 12100004.
     try {
       const mgr = abilityAccessCtrl.createAtManager();
       const callback = (info: abilityAccessCtrl.PermissionStateChangeInfo): void => {
-        console.info('[GEO-DIAG] selfPermissionStateChange event fired: permission=' +
-          info.permissionName + ', change=' + info.change);
         this.settlePermissions('selfPermissionStateChange');
       };
       this.permissionStateCallback = callback;
       mgr.on('selfPermissionStateChange', this.permissionStateList, callback);
-      console.info('[GEO-DIAG] selfPermissionStateChange listener registered');
     } catch (e) {
-      console.warn('[GEO-DIAG] on selfPermissionStateChange failed: ' + (e as BusinessError).message);
+      console.warn('[GEO] on selfPermissionStateChange failed: ' + (e as BusinessError).message);
       this.permissionStateCallback = null;
     }
 
-    // 路3: setTimeout 60s safety net (only effective while in foreground).
+    // Path 3: setTimeout 60s safety net (only effective while in foreground).
     this.permissionTimeoutId = setTimeout((): void => {
-      console.info('[GEO-DIAG] timeout (60s) fired');
+      console.warn('[GEO] permission request safety-net timeout (60s) fired; settling with polled state');
       this.settlePermissions('timeout');
     }, 60000);
 
@@ -316,13 +311,11 @@ export class GeolocationPlugin extends Plugin {
 
   private async firePermissionRequest(): Promise<void> {
     try {
-      console.info('[GEO-DIAG] before requestPermissionsFromUser');
       const mgr = abilityAccessCtrl.createAtManager();
       await mgr.requestPermissionsFromUser(this.context!, [PERMISSION_FINE, PERMISSION_APPROX]);
-      console.info('[GEO-DIAG] promise resolved');
       this.settlePermissions('promise-resolved');
     } catch (e) {
-      console.warn('[GEO-DIAG] promise rejected: ' + (e as BusinessError).message);
+      console.warn('[GEO] promise rejected: ' + (e as BusinessError).message);
       this.settlePermissions('promise-rejected');
     }
   }
@@ -334,11 +327,9 @@ export class GeolocationPlugin extends Plugin {
    */
   private settlePermissions(source: string): void {
     if (this.permissionSettled) {
-      console.info('[GEO-DIAG] settlePermissions skipped (already settled) from ' + source);
       return;
     }
     this.permissionSettled = true;
-    console.info('[GEO-DIAG] settlePermissions from ' + source);
 
     // Cleanup listeners and timeout
     this.cleanupPermissionListeners();
@@ -366,8 +357,6 @@ export class GeolocationPlugin extends Plugin {
     const status = this.queryPermissionStatus();
     const allGranted: boolean = status.location === 'granted' && status.coarseLocation === 'granted';
     if (allGranted || attempt >= 6) {
-      console.info('[GEO-DIAG] resolveWithPolledStatus: attempt=' + attempt +
-        ', location=' + status.location + ', coarseLocation=' + status.coarseLocation);
       invoke.resolve(JSON.stringify(status));
       return;
     }
@@ -383,7 +372,7 @@ export class GeolocationPlugin extends Plugin {
         const mgr = abilityAccessCtrl.createAtManager();
         mgr.off('selfPermissionStateChange', this.permissionStateList, this.permissionStateCallback);
       } catch (e) {
-        console.warn('[GEO-DIAG] off selfPermissionStateChange failed: ' + (e as BusinessError).message);
+        console.warn('[GEO] off selfPermissionStateChange failed: ' + (e as BusinessError).message);
       }
       this.permissionStateCallback = null;
     }

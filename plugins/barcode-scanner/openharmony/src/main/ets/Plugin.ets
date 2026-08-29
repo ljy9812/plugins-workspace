@@ -61,7 +61,6 @@ export class BarcodeScannerPlugin extends Plugin {
    */
   onForeground(): void {
     if (this.pendingPermissionInvoke != null && !this.permissionSettled) {
-      console.info('[BARCODE-DIAG] onForeground: settling pending permission request');
       this.settlePermissions('onForeground');
     }
   }
@@ -143,7 +142,6 @@ export class BarcodeScannerPlugin extends Plugin {
 
   private async doRequestPermissions(invoke: Invoke): Promise<void> {
     // requestPermissionsFromUser requires a UIAbilityContext.
-    console.info('[BARCODE-DIAG] doRequestPermissions enter, context=' + (this.context != null ? 'non-null' : 'null'));
     if (this.context == null) {
       invoke.resolve(JSON.stringify({ camera: 'prompt' }));
       return;
@@ -153,10 +151,10 @@ export class BarcodeScannerPlugin extends Plugin {
 
   /**
    * Three-path permission request with fallback settlement:
-   *   路1 (onForeground): ability returns to foreground after dialog → settle.
-   *   路2 (selfPermissionStateChange event): system fires permission state
+   *   Path 1 (onForeground): ability returns to foreground after dialog → settle.
+   *   Path 2 (selfPermissionStateChange event): system fires permission state
    *       change callback → settle.
-   *   路3 (setTimeout 60s): safety net for foreground-only scenarios → settle.
+   *   Path 3 (setTimeout 60s): safety net for foreground-only scenarios → settle.
    *   Original Promise .then/.catch also settles (if it ever resolves).
    * All settlement paths read the real permission state via
    * queryCameraPermissionStatus(), not the possibly-stale authResults array.
@@ -167,26 +165,23 @@ export class BarcodeScannerPlugin extends Plugin {
     this.permissionSettled = false;
     this.permissionStateList = [PERMISSION_CAMERA];
 
-    // 路2: Register selfPermissionStateChange listener (API 18+).
+    // Path 2: Register selfPermissionStateChange listener (API 18+).
     // Wrap in try/catch — duplicate registration throws 12100004.
     try {
       const mgr = abilityAccessCtrl.createAtManager();
       const callback = (info: abilityAccessCtrl.PermissionStateChangeInfo): void => {
-        console.info('[BARCODE-DIAG] selfPermissionStateChange event fired: permission=' +
-          info.permissionName + ', change=' + info.change);
         this.settlePermissions('selfPermissionStateChange');
       };
       this.permissionStateCallback = callback;
       mgr.on('selfPermissionStateChange', this.permissionStateList, callback);
-      console.info('[BARCODE-DIAG] selfPermissionStateChange listener registered');
     } catch (e) {
-      console.warn('[BARCODE-DIAG] on selfPermissionStateChange failed: ' + (e as BusinessError).message);
+      console.warn('[BARCODE] on selfPermissionStateChange failed: ' + (e as BusinessError).message);
       this.permissionStateCallback = null;
     }
 
-    // 路3: setTimeout 60s safety net (only effective while in foreground).
+    // Path 3: setTimeout 60s safety net (only effective while in foreground).
     this.permissionTimeoutId = setTimeout((): void => {
-      console.info('[BARCODE-DIAG] timeout (60s) fired');
+      console.warn('[BARCODE] permission request safety-net timeout (60s) fired; settling with polled state');
       this.settlePermissions('timeout');
     }, 60000);
 
@@ -198,13 +193,11 @@ export class BarcodeScannerPlugin extends Plugin {
 
   private async firePermissionRequest(): Promise<void> {
     try {
-      console.info('[BARCODE-DIAG] before requestPermissionsFromUser');
       const mgr = abilityAccessCtrl.createAtManager();
       await mgr.requestPermissionsFromUser(this.context!, [PERMISSION_CAMERA]);
-      console.info('[BARCODE-DIAG] promise resolved');
       this.settlePermissions('promise-resolved');
     } catch (e) {
-      console.warn('[BARCODE-DIAG] promise rejected: ' + (e as BusinessError).message);
+      console.warn('[BARCODE] promise rejected: ' + (e as BusinessError).message);
       this.settlePermissions('promise-rejected');
     }
   }
@@ -216,11 +209,9 @@ export class BarcodeScannerPlugin extends Plugin {
    */
   private settlePermissions(source: string): void {
     if (this.permissionSettled) {
-      console.info('[BARCODE-DIAG] settlePermissions skipped (already settled) from ' + source);
       return;
     }
     this.permissionSettled = true;
-    console.info('[BARCODE-DIAG] settlePermissions from ' + source);
 
     // Cleanup listeners and timeout
     this.cleanupPermissionListeners();
@@ -248,8 +239,6 @@ export class BarcodeScannerPlugin extends Plugin {
     const state = this.queryCameraPermissionStatus();
     const allGranted: boolean = state === 'granted';
     if (allGranted || attempt >= 6) {
-      console.info('[BARCODE-DIAG] resolveWithPolledStatus: attempt=' + attempt +
-        ', camera=' + state);
       invoke.resolve(JSON.stringify({ camera: state }));
       return;
     }
@@ -265,7 +254,7 @@ export class BarcodeScannerPlugin extends Plugin {
         const mgr = abilityAccessCtrl.createAtManager();
         mgr.off('selfPermissionStateChange', this.permissionStateList, this.permissionStateCallback);
       } catch (e) {
-        console.warn('[BARCODE-DIAG] off selfPermissionStateChange failed: ' + (e as BusinessError).message);
+        console.warn('[BARCODE] off selfPermissionStateChange failed: ' + (e as BusinessError).message);
       }
       this.permissionStateCallback = null;
     }

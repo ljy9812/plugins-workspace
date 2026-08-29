@@ -29,7 +29,6 @@ pub enum OsType {
     Macos,
     IOS,
     Android,
-    #[cfg(target_env = "ohos")]
     Ohos,
 }
 
@@ -41,7 +40,6 @@ impl Display for OsType {
             Self::Macos => write!(f, "macos"),
             Self::IOS => write!(f, "ios"),
             Self::Android => write!(f, "android"),
-            #[cfg(target_env = "ohos")]
             Self::Ohos => write!(f, "ohos"),
         }
     }

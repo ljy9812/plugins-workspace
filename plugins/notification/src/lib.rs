@@ -250,7 +250,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::create_channel,
             #[cfg(target_env = "ohos")]
             commands::delete_channel,
-            #[cfg(target_env = "ohos")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             commands::list_channels,
         ])
         .js_init_script(include_str!("init-iife.js").replace(

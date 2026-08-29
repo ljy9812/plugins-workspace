@@ -59,7 +59,7 @@ impl<R: Runtime> Clipboard<R> {
             .map_err(Into::into)
     }
 
-    pub async fn write_image(&self, _rgba: &[u8], _width: u32, _height: u32) -> crate::Result<()> {
+    pub fn write_image(&self, _image: &Image<'_>) -> crate::Result<()> {
         Err(crate::Error::Clipboard(
             "Unsupported on this platform".to_string(),
         ))

@@ -200,24 +200,35 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
                 window.update_state(s, flags)?;
             }
         }
-        // OHOS save 分支：对每个 tracked window 无条件刷新 size + position（不再门控于 flags，
-        // 也不再临时 gate 于主窗口）。
+        // OHOS save branch: unconditionally refresh size + position for every
+        // tracked window (no longer gated on `flags`, and no longer temporarily
+        // gated to the main window only).
         //
-        // 理由 1（为何去掉 flags 门控）：serde 序列化整个 WindowState struct（无
-        // skip_serializing_if），即使调用方只传 SIZE flag，陈旧 x/y 也会一起落盘；restore 时
-        // 若 state_flags=all 就会把 (0,0) 应用到窗口。故 size 与 position 必须在 save 时一起
-        // 刷新，与 flags 无关。
+        // Reason 1 (why flags gating was removed): serde serializes the entire
+        // WindowState struct (no skip_serializing_if), so even when the caller
+        // passes only the SIZE flag, stale x/y are persisted together; on
+        // restore with state_flags=all, a stale (0,0) would be applied to the
+        // window. Thus size and position must be refreshed together at save
+        // time, independent of `flags`.
         //
-        // 理由 2（为何用 getter 而非依赖 Moved/Resized 事件缓存）：tao OHOS 把 windowRectChange
-        // (MOVE/DRAG) 派发为 Event::ContentRectChange 而非 WindowEvent::Moved，Moved handler 从不
-        // 触发，position 停在创建默认值；size 虽由 Resized handler 刷新，但 save 与事件存在竞态
-        // 可能落盘旧值。注意：outer_position()/inner_size() 的 tao 底层虽读 per-window rect 缓存，
-        // 但 runtime-wry dispatcher 的传输层是"发消息到主线程 + recv 等回复"的阻塞环回——
-        // 因此几何采集必须在 cache 锁外完成（见上方 fresh_geometry 块），采集结果在锁内写回。
+        // Reason 2 (why getters are used instead of relying on the
+        // Moved/Resized event cache): tao OHOS dispatches windowRectChange
+        // (MOVE/DRAG) as Event::ContentRectChange rather than
+        // WindowEvent::Moved, so the Moved handler never fires and position
+        // stays at the creation default; size is refreshed by the Resized
+        // handler, but a race between save and the event may persist a stale
+        // value. Note: outer_position()/inner_size() read the per-window rect
+        // cache at the tao layer, but the runtime-wry dispatcher transport is a
+        // blocking round-trip ("send message to main thread + recv for the
+        // reply") — therefore geometry collection MUST happen outside the cache
+        // lock (see the fresh_geometry block above); the collected results are
+        // written back inside the lock.
         //
-        // 理由 3（为何不再 gate 于主窗口）：Phase 2 落地后 tao 的 inner_size/outer_position 走
-        // window_rect_for(window_id)（design.md D5），每个窗口读自身 rect，互不干扰。Phase 1 的
-        // `if window.label() != "main" { continue; }` 临时 gate 已删除——所有 tracked window 均刷新。
+        // Reason 3 (why the main-window gate was dropped): after Phase 2, tao's
+        // inner_size/outer_position go through window_rect_for(window_id)
+        // (design.md D5); each window reads its own rect with no interference.
+        // The Phase 1 `if window.label() != "main" { continue; }` temporary gate
+        // has been removed — all tracked windows are refreshed.
         #[cfg(target_env = "ohos")]
         for (label, s) in state.iter_mut() {
             if let Some((_, position, size)) = fresh_geometry.iter().find(|(l, _, _)| l == label) {
@@ -232,19 +243,30 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
             }
         }
 
-        // Serialize while holding the cache lock, then release it before disk I/O.
-        // save_window_state runs on a tokio worker; the main thread's Resized
-        // handler locks this same cache, and holding it across fs::write blocks
-        // that handler for the duration of a synchronous disk write — observed
-        // as a transient appfreeze (THREAD_BLOCK_6S) during high-frequency
-        // window churn on OHOS. Concurrent saves may now interleave their file
-        // writes (last writer wins), which is acceptable for a best-effort
-        // state snapshot.
-        let serialized = serde_json::to_vec_pretty(&*state)?;
-        drop(state);
+        // OHOS: serialize while holding the cache lock, then release it before
+        // disk I/O. save_window_state runs on a tokio worker; the main thread's
+        // Resized handler locks this same cache, and holding it across fs::write
+        // blocks that handler for the duration of a synchronous disk write —
+        // observed as a transient appfreeze (THREAD_BLOCK_6S) during
+        // high-frequency window churn on OHOS. Concurrent saves may now
+        // interleave their file writes (last writer wins), which is acceptable
+        // for a best-effort state snapshot.
+        #[cfg(target_env = "ohos")]
+        {
+            let serialized = serde_json::to_vec_pretty(&*state)?;
+            drop(state);
+            create_dir_all(app_dir)?;
+            std::fs::write(state_path, serialized)?;
+        }
 
-        create_dir_all(app_dir)?;
-        std::fs::write(state_path, serialized)?;
+        // Non-OHOS: keep the original desktop behavior — the cache lock is held
+        // across the disk write (no deadlock risk on desktop where save runs on
+        // the event loop and getters execute inline).
+        #[cfg(not(target_env = "ohos"))]
+        {
+            create_dir_all(app_dir)?;
+            std::fs::write(state_path, serde_json::to_vec_pretty(&*state)?)?;
+        }
 
         Ok(())
     }
@@ -334,6 +356,13 @@ impl<R: Runtime> WindowExt for Window<R> {
             }; // cache lock released
 
             // Phase 2 (no lock): apply the state to the window.
+            //
+            // KNOWN LIMITATION (OHOS): maximize, fullscreen, and decorations
+            // state are silently dropped on OHOS — set_maximize(),
+            // set_fullscreen(), and set_decorations() are desktop-only
+            // (cfg(desktop)) because the OHOS tao backend does not implement
+            // them. Their saved values are still persisted to disk but have no
+            // effect on restore. Position and size are restored.
             let mut should_show = true;
 
             if let Some(state) = saved {
