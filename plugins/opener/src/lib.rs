@@ -58,7 +58,16 @@ impl<R: Runtime> Opener<R> {
     /// ## Platform-specific:
     ///
     /// - **Android / iOS**: Always opens using default program, unless `with` is provided as "inAppBrowser".
-    #[cfg(any(desktop, target_env = "ohos"))]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
+    pub fn open_url(&self, url: impl Into<String>, with: Option<impl Into<String>>) -> Result<()> {
+        crate::open::open(
+            url.into(),
+            with.map(Into::into).filter(|with| with != "inAppBrowser"),
+        )
+    }
+
+    /// OHOS: async — routed through the openharmony-ability bridge.
+    #[cfg(target_env = "ohos")]
     pub async fn open_url(&self, url: impl Into<String>, with: Option<impl Into<String>>) -> Result<()> {
         crate::open::open_url(
             url.into(),
@@ -86,7 +95,7 @@ impl<R: Runtime> Opener<R> {
     ///
     /// - **Android / iOS**: Always opens using default program, unless `with` is provided as "inAppBrowser".
     #[cfg(all(mobile, not(target_env = "ohos")))]
-    pub async fn open_url(&self, url: impl Into<String>, with: Option<impl Into<String>>) -> Result<()> {
+    pub fn open_url(&self, url: impl Into<String>, with: Option<impl Into<String>>) -> Result<()> {
         self.mobile_plugin_handle
             .run_mobile_plugin(
                 "open",
@@ -113,7 +122,20 @@ impl<R: Runtime> Opener<R> {
     /// ## Platform-specific:
     ///
     /// - **Android / iOS**: Always opens using default program.
-    #[cfg(any(desktop, target_env = "ohos"))]
+    #[cfg(all(desktop, not(target_env = "ohos")))]
+    pub fn open_path(
+        &self,
+        path: impl Into<String>,
+        with: Option<impl Into<String>>,
+    ) -> Result<()> {
+        crate::open::open(
+            path.into(),
+            with.map(Into::into).filter(|with| with != "inAppBrowser"),
+        )
+    }
+
+    /// OHOS: async — routed through the openharmony-ability bridge.
+    #[cfg(target_env = "ohos")]
     pub async fn open_path(
         &self,
         path: impl Into<String>,
@@ -145,7 +167,7 @@ impl<R: Runtime> Opener<R> {
     ///
     /// - **Android / iOS**: Always opens using default program.
     #[cfg(all(mobile, not(target_env = "ohos")))]
-    pub async fn open_path(
+    pub fn open_path(
         &self,
         path: impl Into<String>,
         _with: Option<impl Into<String>>,
@@ -155,10 +177,28 @@ impl<R: Runtime> Opener<R> {
             .map_err(Into::into)
     }
 
+    #[cfg(not(target_env = "ohos"))]
+    pub fn reveal_item_in_dir<P: AsRef<Path>>(&self, p: P) -> Result<()> {
+        reveal_item_in_dir(p)
+    }
+
+    /// OHOS: async — routed through the openharmony-ability bridge.
+    #[cfg(target_env = "ohos")]
     pub async fn reveal_item_in_dir<P: AsRef<Path>>(&self, p: P) -> Result<()> {
         reveal_item_in_dir(p).await
     }
 
+    #[cfg(not(target_env = "ohos"))]
+    pub fn reveal_items_in_dir<I, P>(&self, paths: I) -> Result<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        reveal_items_in_dir(paths)
+    }
+
+    /// OHOS: async — routed through the openharmony-ability bridge.
+    #[cfg(target_env = "ohos")]
     pub async fn reveal_items_in_dir<I, P>(&self, paths: I) -> Result<()>
     where
         I: IntoIterator<Item = P>,

@@ -620,16 +620,21 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
         .on_event(|_app, _event| {
             #[cfg(any(target_os = "macos", target_os = "ios", target_env = "ohos"))]
             if let tauri::RunEvent::Opened { urls } = _event {
-                if !urls.is_empty() {
-                    use tauri::Emitter;
-
-                    let _ = _app.emit("deep-link://new-url", urls);
-                    _app.state::<DeepLink<R>>()
-                        .current
-                        .lock()
-                        .unwrap()
-                        .replace(urls.clone());
+                // OHOS fires Opened with an empty URL list on ordinary cold
+                // starts; emitting those would clobber `current` with an empty
+                // value. macOS/iOS keep the upstream unconditional emit.
+                #[cfg(target_env = "ohos")]
+                if urls.is_empty() {
+                    return;
                 }
+                use tauri::Emitter;
+
+                let _ = _app.emit("deep-link://new-url", urls);
+                _app.state::<DeepLink<R>>()
+                    .current
+                    .lock()
+                    .unwrap()
+                    .replace(urls.clone());
             }
         })
         .build()

@@ -424,7 +424,6 @@ impl<R: Runtime> WindowExt for Window<R> {
                 .filter(|state| state != &&WindowState::default())
             {
                 if flags.contains(StateFlags::DECORATIONS) {
-                    #[cfg(desktop)]
                     self.set_decorations(state.decorated)?;
                 }
 
@@ -449,12 +448,10 @@ impl<R: Runtime> WindowExt for Window<R> {
                 }
 
                 if flags.contains(StateFlags::MAXIMIZED) && state.maximized {
-                    #[cfg(desktop)]
                     self.maximize()?;
                 }
 
                 if flags.contains(StateFlags::FULLSCREEN) {
-                    #[cfg(desktop)]
                     self.set_fullscreen(state.fullscreen)?;
                 }
 

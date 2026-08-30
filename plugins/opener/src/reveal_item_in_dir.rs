@@ -9,8 +9,31 @@ use std::path::{Path, PathBuf};
 /// ## Platform-specific:
 ///
 /// - **Android / iOS:** Unsupported.
-pub async fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
-    reveal_items_in_dir(std::iter::once(path)).await
+#[cfg(not(target_env = "ohos"))]
+pub fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
+    let path = canonicalize(path.as_ref())?;
+
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    return imp::reveal_items_in_dir(&[path]);
+
+    #[cfg(not(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    Err(crate::Error::UnsupportedPlatform)
 }
 
 /// Reveal multiple paths in the system's default explorer.
@@ -18,6 +41,52 @@ pub async fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
 /// ## Platform-specific:
 ///
 /// - **Android / iOS:** Unsupported.
+#[cfg(not(target_env = "ohos"))]
+pub fn reveal_items_in_dir<I, P>(paths: I) -> crate::Result<()>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
+    let mut canonicalized = vec![];
+
+    for path in paths {
+        let path = canonicalize(path.as_ref())?;
+        canonicalized.push(path);
+    }
+
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    return imp::reveal_items_in_dir(&canonicalized);
+
+    #[cfg(not(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    Err(crate::Error::UnsupportedPlatform)
+}
+
+/// OHOS variant of [`reveal_item_in_dir`]: async — the reveal goes through the
+/// openharmony-ability bridge (TSFN → ArkTS file-manager Want).
+#[cfg(target_env = "ohos")]
+pub async fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
+    reveal_items_in_dir(std::iter::once(path)).await
+}
+
+/// OHOS variant of [`reveal_items_in_dir`]: async — see above. Only the first
+/// path's parent is revealed (OHOS has no multi-file reveal API).
+#[cfg(target_env = "ohos")]
 pub async fn reveal_items_in_dir<I, P>(paths: I) -> crate::Result<()>
 where
     I: IntoIterator<Item = P>,
@@ -33,46 +102,11 @@ where
         // ArkTS side maps known public prefixes to file-manager virtual uris
         // and the file manager itself is the arbiter of what it opens.
         // Sandbox paths (the only ones the app can see) keep full validation.
-        #[cfg(target_env = "ohos")]
         let path = canonicalize(path.as_ref()).unwrap_or_else(|_| path.as_ref().to_path_buf());
-        #[cfg(not(target_env = "ohos"))]
-        let path = canonicalize(path.as_ref())?;
         canonicalized.push(path);
     }
 
-    // Non-OHOS platforms: sync `mod imp` (Windows/macOS/Linux/BSD). Called inline
-    // (no `.await`) — the async wrapper is call-convention only here.
-    #[cfg(any(
-        windows,
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos")),
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ))]
-    {
-        return imp::reveal_items_in_dir(&canonicalized);
-    }
-
-    // OHOS: async `mod imp` (openharmony_ability bridge). Awaits the TSFN bridge.
-    #[cfg(target_env = "ohos")]
-    {
-        return imp::reveal_items_in_dir(&canonicalized).await;
-    }
-
-    // Android / iOS and any other platform without a `mod imp`.
-    #[cfg(not(any(
-        windows,
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos")),
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_env = "ohos"
-    )))]
-    Err(crate::Error::UnsupportedPlatform)
+    imp::reveal_items_in_dir(&canonicalized).await
 }
 
 fn canonicalize(path: &Path) -> crate::Result<PathBuf> {

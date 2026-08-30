@@ -39,7 +39,10 @@ pub async fn open_url<R: Runtime>(
         return Err(Error::ForbiddenUrl { url, with });
     }
 
-    app.opener().open_url(url, with).await
+    #[cfg(target_env = "ohos")]
+    return app.opener().open_url(url, with).await;
+    #[cfg(not(target_env = "ohos"))]
+    app.opener().open_url(url, with)
 }
 
 #[tauri::command]
@@ -70,11 +73,17 @@ pub async fn open_path<R: Runtime>(
         return Err(Error::ForbiddenPath { path, with });
     }
 
-    app.opener().open_path(path, with).await
+    #[cfg(target_env = "ohos")]
+    return app.opener().open_path(path, with).await;
+    #[cfg(not(target_env = "ohos"))]
+    app.opener().open_path(path, with)
 }
 
 /// TODO: in the next major version, rename to `reveal_items_in_dir`
 #[tauri::command]
 pub async fn reveal_item_in_dir(paths: Vec<PathBuf>) -> crate::Result<()> {
-    crate::reveal_items_in_dir(&paths).await
+    #[cfg(target_env = "ohos")]
+    return crate::reveal_items_in_dir(&paths).await;
+    #[cfg(not(target_env = "ohos"))]
+    crate::reveal_items_in_dir(&paths)
 }

@@ -451,9 +451,7 @@ fn ohos_setup<R: Runtime>(
             while let Ok(event) = receiver.recv() {
                 // Clone needed data and drop the lock before calling user callbacks
                 // to avoid deadlock if the callback tries to acquire the same lock.
-                let entry = shortcuts_
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                let entry = lock_shortcuts(&shortcuts_)
                     .get(&event.id)
                     .map(|reg| (reg.handler.clone(), reg.shortcut.clone()));
 
@@ -479,6 +477,19 @@ fn ohos_setup<R: Runtime>(
     }
 
     app.manage(GlobalShortcut { shortcuts, client });
+}
+
+/// Locks the shortcuts store. OHOS recovers from a poisoned lock (a panicking
+/// bridge thread must not permanently break shortcut registration); other
+/// platforms keep the upstream panicking `unwrap` semantics.
+#[cfg(target_env = "ohos")]
+fn lock_shortcuts<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(not(target_env = "ohos"))]
+fn lock_shortcuts<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap()
 }
 
 impl<R: Runtime> GlobalShortcut<R> {
@@ -513,10 +524,7 @@ impl<R: Runtime> GlobalShortcut<R> {
             });
         }
 
-        self.shortcuts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id, RegisteredShortcut { shortcut, handler });
+        lock_shortcuts(&self.shortcuts).insert(id, RegisteredShortcut { shortcut, handler });
         Ok(())
     }
 
@@ -529,7 +537,7 @@ impl<R: Runtime> GlobalShortcut<R> {
 
         let hotkeys = shortcuts.into_iter().collect::<Vec<_>>();
 
-        let mut shortcuts = self.shortcuts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut shortcuts = lock_shortcuts(&self.shortcuts);
         for shortcut in hotkeys {
             #[cfg(not(target_env = "ohos"))]
             {
@@ -643,7 +651,7 @@ impl<R: Runtime> GlobalShortcut<R> {
             }
         }
 
-        self.shortcuts.lock().unwrap_or_else(|e| e.into_inner()).remove(&shortcut.id());
+        lock_shortcuts(&self.shortcuts).remove(&shortcut.id());
         Ok(())
     }
 
@@ -682,7 +690,7 @@ impl<R: Runtime> GlobalShortcut<R> {
             }
         }
 
-        let mut shortcuts = self.shortcuts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut shortcuts = lock_shortcuts(&self.shortcuts);
         for s in mapped_shortcuts {
             shortcuts.remove(&s.id());
         }
@@ -692,7 +700,7 @@ impl<R: Runtime> GlobalShortcut<R> {
 
     /// Unregister all registered shortcuts.
     pub fn unregister_all(&self) -> Result<()> {
-        let mut shortcuts = self.shortcuts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut shortcuts = lock_shortcuts(&self.shortcuts);
         let hotkeys = std::mem::take(&mut *shortcuts);
 
         #[cfg(not(target_env = "ohos"))]
@@ -735,7 +743,7 @@ impl<R: Runtime> GlobalShortcut<R> {
         S::Error: std::error::Error,
     {
         if let Ok(shortcut) = try_into_shortcut(shortcut) {
-            self.shortcuts.lock().unwrap_or_else(|e| e.into_inner()).contains_key(&shortcut.id())
+            lock_shortcuts(&self.shortcuts).contains_key(&shortcut.id())
         } else {
             false
         }
@@ -929,7 +937,7 @@ impl<R: Runtime> Builder<R> {
 
                     let app_handle = app.clone();
                     GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
-                        if let Some(shortcut) = shortcuts_.lock().unwrap_or_else(|err| err.into_inner()).get(&e.id) {
+                        if let Some(shortcut) = shortcuts_.lock().unwrap().get(&e.id) {
                             if let Some(handler) = &shortcut.handler {
                                 handler(&app_handle, &shortcut.shortcut, e.clone());
                             }

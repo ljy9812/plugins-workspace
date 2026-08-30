@@ -33,31 +33,31 @@ pub(crate) fn open<P: AsRef<OsStr>, S: AsRef<str>>(path: P, with: Option<S>) -> 
 ///     Ok(())
 ///   });
 /// ```
-pub async fn open_url<P: AsRef<str>, S: AsRef<str>>(url: P, with: Option<S>) -> crate::Result<()> {
+#[cfg(not(target_env = "ohos"))]
+pub fn open_url<P: AsRef<str>, S: AsRef<str>>(url: P, with: Option<S>) -> crate::Result<()> {
     let url = url.as_ref();
-    #[cfg(target_env = "ohos")]
-    {
-        use openharmony_ability_plugin_url::UrlExt;
+    open(url, with)
+}
 
-        // 'open with' (with-program) is unsupported on OHOS — system default only.
-        let _ = with;
-        let ohos_app = tauri::ohos::APP
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().cloned())
-            .ok_or_else(|| {
-                crate::Error::OpenharmonyAbility("OHOS APP not initialized".to_string())
-            })?;
-        ohos_app
-            .open_url(url.to_string())
-            .await
-            .map_err(|e| crate::Error::OpenharmonyAbility(e.to_string()))?;
-        return Ok(());
-    }
-    #[cfg(not(target_env = "ohos"))]
-    {
-        open(url, with)
-    }
+/// OHOS variant of [`open_url`]: async — routed through the
+/// openharmony-ability bridge. 'open with' (with-program) is unsupported on
+/// OHOS — system default only.
+#[cfg(target_env = "ohos")]
+pub async fn open_url<P: AsRef<str>, S: AsRef<str>>(url: P, with: Option<S>) -> crate::Result<()> {
+    use openharmony_ability_plugin_url::UrlExt;
+
+    let _ = with;
+    let url = url.as_ref();
+    let ohos_app = tauri::ohos::APP
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().cloned())
+        .ok_or_else(|| crate::Error::OpenharmonyAbility("OHOS APP not initialized".to_string()))?;
+    ohos_app
+        .open_url(url.to_string())
+        .await
+        .map_err(|e| crate::Error::OpenharmonyAbility(e.to_string()))?;
+    Ok(())
 }
 
 /// Opens path with the program specified in `with`, or system default if `None`.
@@ -76,38 +76,38 @@ pub async fn open_url<P: AsRef<str>, S: AsRef<str>>(url: P, with: Option<S>) -> 
 ///     Ok(())
 ///   });
 /// ```
-pub async fn open_path<P: AsRef<Path>, S: AsRef<str>>(path: P, with: Option<S>) -> crate::Result<()> {
-    #[cfg(target_env = "ohos")]
-    {
-        use openharmony_ability_plugin_url::UrlExt;
+#[cfg(not(target_env = "ohos"))]
+pub fn open_path<P: AsRef<Path>, S: AsRef<str>>(path: P, with: Option<S>) -> crate::Result<()> {
+    let path = path.as_ref();
+    if with.is_none() {
+        // Returns an IO error if not exists, and besides `exists()` is a shorthand for `metadata()`
+        _ = path.metadata()?;
+    }
+    open(path, with)
+}
 
-        let _ = with; // 'open with' unsupported on OHOS
-        // Canonicalize so relative paths (and any symlink/sandbox redirect) resolve
-        // to an absolute file:// URI — url::Url::from_file_path rejects relative
-        // paths. Matches the reveal_item_in_dir OHOS branch behavior.
-        let canon = std::fs::canonicalize(path.as_ref())?;
-        let uri = url::Url::from_file_path(&canon)
-            .map_err(|_| crate::Error::InvalidPath(path.as_ref().to_string_lossy().to_string()))?;
-        let ohos_app = tauri::ohos::APP
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().cloned())
-            .ok_or_else(|| {
-                crate::Error::OpenharmonyAbility("OHOS APP not initialized".to_string())
-            })?;
-        ohos_app
-            .open_url(uri.to_string())
-            .await
-            .map_err(|e| crate::Error::OpenharmonyAbility(e.to_string()))?;
-        return Ok(());
-    }
-    #[cfg(not(target_env = "ohos"))]
-    {
-        let path = path.as_ref();
-        if with.is_none() {
-            // Returns an IO error if not exists, and besides `exists()` is a shorthand for `metadata()`
-            _ = path.metadata()?;
-        }
-        open(path, with)
-    }
+/// OHOS variant of [`open_path`]: async — routed through the
+/// openharmony-ability bridge. 'open with' (with-program) is unsupported on
+/// OHOS — system default only.
+#[cfg(target_env = "ohos")]
+pub async fn open_path<P: AsRef<Path>, S: AsRef<str>>(path: P, with: Option<S>) -> crate::Result<()> {
+    use openharmony_ability_plugin_url::UrlExt;
+
+    let _ = with; // 'open with' unsupported on OHOS
+    // Canonicalize so relative paths (and any symlink/sandbox redirect) resolve
+    // to an absolute file:// URI — url::Url::from_file_path rejects relative
+    // paths. Matches the reveal_item_in_dir OHOS branch behavior.
+    let canon = std::fs::canonicalize(path.as_ref())?;
+    let uri = url::Url::from_file_path(&canon)
+        .map_err(|_| crate::Error::InvalidPath(path.as_ref().to_string_lossy().to_string()))?;
+    let ohos_app = tauri::ohos::APP
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().cloned())
+        .ok_or_else(|| crate::Error::OpenharmonyAbility("OHOS APP not initialized".to_string()))?;
+    ohos_app
+        .open_url(uri.to_string())
+        .await
+        .map_err(|e| crate::Error::OpenharmonyAbility(e.to_string()))?;
+    Ok(())
 }
