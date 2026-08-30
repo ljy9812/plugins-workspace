@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-#[cfg(target_env = "ohos")]
-use serde::Deserialize;
 use tauri::{command, plugin::PermissionState, AppHandle, Runtime, State};
 
 use crate::{Notification, NotificationData, Result};
@@ -168,7 +166,7 @@ pub(crate) async fn delete_channel<R: Runtime>(
     notification.delete_channel(id)
 }
 
-#[cfg(any(target_os = "android", target_env = "ohos"))]
+#[cfg(target_env = "ohos")]
 #[command]
 pub(crate) async fn list_channels<R: Runtime>(
     _app: AppHandle<R>,

@@ -140,23 +140,38 @@ impl<R: Runtime> Notification<R> {
             .map_err(Into::into)
     }
 
-    /// Returns raw JSON from listChannels (used by command layer to avoid
-    /// ACL camelCase/snake_case mismatch). Rust callers should prefer
-    /// `list_channels()` which returns typed `Vec<Channel>`.
-    #[cfg(any(target_os = "android", target_env = "ohos"))]
+    /// Returns raw JSON from listChannels (used by the OHOS command layer to
+    /// avoid the ACL camelCase/snake_case mismatch). Rust callers should
+    /// prefer `list_channels()` which returns typed `Vec<Channel>`.
+    #[cfg(target_env = "ohos")]
     pub fn list_channels_raw(&self) -> crate::Result<serde_json::Value> {
         self.0
             .run_mobile_plugin("listChannels", ())
             .map_err(Into::into)
     }
 
-    /// Returns typed list of channels. Deserializes from the raw JSON
-    /// returned by the platform plugin.
+    /// Returns typed list of channels. Android keeps the upstream
+    /// implementation verbatim; OHOS deserializes from the raw JSON returned
+    /// by the ArkTS bridge (which cannot go through the typed path due to
+    /// the ACL camelCase/snake_case mismatch).
     #[cfg(any(target_os = "android", target_env = "ohos"))]
     pub fn list_channels(&self) -> crate::Result<Vec<Channel>> {
-        let raw = self.list_channels_raw()?;
-        serde_json::from_value(raw)
-            .map_err(|e| crate::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())))
+        #[cfg(target_os = "android")]
+        {
+            self.0
+                .run_mobile_plugin("listChannels", ())
+                .map_err(Into::into)
+        }
+        #[cfg(target_env = "ohos")]
+        {
+            let raw = self.list_channels_raw()?;
+            serde_json::from_value(raw).map_err(|e| {
+                crate::Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    e.to_string(),
+                ))
+            })
+        }
     }
 }
 
