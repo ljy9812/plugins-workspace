@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-#![cfg(mobile)]
+#![cfg(any(mobile, target_env = "ohos"))]
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -22,6 +22,9 @@ const PLUGIN_IDENTIFIER: &str = "app.tauri.nfc";
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_nfc);
+
+#[cfg(target_env = "ohos")]
+const PLUGIN_IDENTIFIER: &str = "@tauri/plugin-nfc";
 
 /// Access to the nfc APIs.
 pub struct Nfc<R: Runtime>(PluginHandle<R>);
@@ -76,6 +79,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "NfcPlugin")?;
             #[cfg(target_os = "ios")]
             let handle = api.register_ios_plugin(init_plugin_nfc)?;
+            #[cfg(target_env = "ohos")]
+            let handle = api.register_ohos_plugin(PLUGIN_IDENTIFIER, "NfcPlugin")?;
             app.manage(Nfc(handle));
             Ok(())
         })

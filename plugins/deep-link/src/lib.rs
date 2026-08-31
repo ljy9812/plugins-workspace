@@ -73,6 +73,22 @@ fn init_deep_link<R: Runtime>(
     #[cfg(target_env = "ohos")]
     {
         log::info!("[deep-link] init_deep_link OHOS branch");
+
+        // Register the Rust-side DeepLink bridge plugin so ArkTS configurePlugins
+        // can match it. Without this, bridge calls fail with
+        // "Bridge plugin 'ohos.deep-link' is not installed for '<module>'".
+        use openharmony_ability_plugin_deep_link::DeepLinkBridgePlugin;
+        if let Ok(guard) = tauri::ohos::APP.lock() {
+            if let Some(ohos_app) = guard.as_ref() {
+                if let Err(e) = ohos_app.register_plugin(DeepLinkBridgePlugin) {
+                    log::error!(
+                        "[deep-link] failed to register DeepLinkBridgePlugin: {}",
+                        e
+                    );
+                }
+            }
+        }
+
         return Ok(DeepLink {
             app: app.clone(),
             current: Default::default(),
@@ -242,8 +258,21 @@ mod imp {
         pub fn get_current(&self) -> crate::Result<Option<Vec<url::Url>>> {
             #[cfg(target_env = "ohos")]
             {
+                use openharmony_ability_plugin_deep_link::DeepLinkExt;
+
                 // Lazy take: first get_current reads cold-start want.uri (stored by onAbilityCreateWithWant)
-                let initial = openharmony_ability::take_initial_want_uri();
+                let initial = if let Ok(guard) = tauri::ohos::APP.lock() {
+                    if let Some(app) = guard.as_ref() {
+                        match app.deep_link() {
+                            Ok(client) => client.take_initial_uri(),
+                            Err(_) => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
                 log::info!("[deep-link] get_current lazy-take returned: {:?}", initial);
                 if !initial.is_empty() {
                     log::info!("[deep-link] get_current lazy-take initial uri: {}", initial);
@@ -591,16 +620,21 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
         .on_event(|_app, _event| {
             #[cfg(any(target_os = "macos", target_os = "ios", target_env = "ohos"))]
             if let tauri::RunEvent::Opened { urls } = _event {
-                if !urls.is_empty() {
-                    use tauri::Emitter;
-
-                    let _ = _app.emit("deep-link://new-url", urls);
-                    _app.state::<DeepLink<R>>()
-                        .current
-                        .lock()
-                        .unwrap()
-                        .replace(urls.clone());
+                // OHOS fires Opened with an empty URL list on ordinary cold
+                // starts; emitting those would clobber `current` with an empty
+                // value. macOS/iOS keep the upstream unconditional emit.
+                #[cfg(target_env = "ohos")]
+                if urls.is_empty() {
+                    return;
                 }
+                use tauri::Emitter;
+
+                let _ = _app.emit("deep-link://new-url", urls);
+                _app.state::<DeepLink<R>>()
+                    .current
+                    .lock()
+                    .unwrap()
+                    .replace(urls.clone());
             }
         })
         .build()

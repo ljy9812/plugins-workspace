@@ -30,5 +30,5 @@ tauri = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_env = "ohos"))'.dependencies]
 tauri = { workspace = true, features = ["wry"] }

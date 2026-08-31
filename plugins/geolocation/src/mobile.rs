@@ -17,7 +17,10 @@ const PLUGIN_IDENTIFIER: &str = "app.tauri.geolocation";
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_geolocation);
 
-// initializes the Kotlin or Swift plugin classes
+#[cfg(target_env = "ohos")]
+const PLUGIN_IDENTIFIER: &str = "@tauri/plugin-geolocation";
+
+// initializes the Kotlin, Swift or ArkTS plugin classes
 pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
@@ -26,6 +29,8 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "GeolocationPlugin")?;
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_geolocation)?;
+    #[cfg(target_env = "ohos")]
+    let handle = api.register_ohos_plugin(PLUGIN_IDENTIFIER, "GeolocationPlugin")?;
     Ok(Geolocation(handle))
 }
 
@@ -97,11 +102,25 @@ impl<R: Runtime> Geolocation<R> {
         &self,
         permissions: Option<Vec<PermissionType>>,
     ) -> crate::Result<PermissionStatus> {
+        // OHOS: serde null (not absent) can trip ArkTS 401 paths — omit the
+        // key when None. Other mobile platforms keep the historical
+        // {"permissions": null} wire shape untouched.
+        let payload = if permissions.is_some() || cfg!(not(target_env = "ohos")) {
+            serde_json::json!({ "permissions": permissions })
+        } else {
+            serde_json::json!({})
+        };
         self.0
-            .run_mobile_plugin(
-                "requestPermissions",
-                serde_json::json!({ "permissions": permissions }),
-            )
+            .run_mobile_plugin("requestPermissions", payload)
+            .map_err(Into::into)
+    }
+
+    /// OHOS only: jump to the system location settings page (master switch +
+    /// app permissions). See commands::open_location_settings.
+    #[cfg(target_env = "ohos")]
+    pub fn open_location_settings(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("openLocationSettings", ())
             .map_err(Into::into)
     }
 }

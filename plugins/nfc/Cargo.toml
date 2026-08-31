@@ -28,3 +28,6 @@ tauri = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 serde_repr = "0.1"
+
+[target.'cfg(any(target_os = "ios", target_env = "ohos"))'.dependencies]
+tauri = { workspace = true, features = ["wry"] }

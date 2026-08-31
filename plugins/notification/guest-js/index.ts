@@ -523,7 +523,7 @@ async function removeAllActive(): Promise<void> {
  * @since 2.0.0
  */
 async function createChannel(channel: Channel): Promise<void> {
-  await invoke('plugin:notification|create_channel', { data: channel })
+  await invoke('plugin:notification|create_channel', { ...channel })
 }
 
 /**

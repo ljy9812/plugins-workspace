@@ -55,7 +55,7 @@ importers:
         version: 2.11.0
       '@tauri-apps/plugin-barcode-scanner':
         specifier: ^2.4.4
-        version: link:../../plugins/barcode-scanner
+        version: 2.4.5
       '@tauri-apps/plugin-biometric':
         specifier: ^2.3.2
         version: link:../../plugins/biometric
@@ -67,7 +67,7 @@ importers:
         version: link:../../plugins/clipboard-manager
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.1
-        version: link:../../plugins/dialog
+        version: 2.7.2
       '@tauri-apps/plugin-fs':
         specifier: ^2.5.1
         version: link:../../plugins/fs
@@ -76,7 +76,7 @@ importers:
         version: link:../../plugins/geolocation
       '@tauri-apps/plugin-global-shortcut':
         specifier: ^2.3.1
-        version: link:../../plugins/global-shortcut
+        version: 2.3.2
       '@tauri-apps/plugin-haptics':
         specifier: ^2.3.2
         version: link:../../plugins/haptics
@@ -103,7 +103,7 @@ importers:
         version: link:../../plugins/shell
       '@tauri-apps/plugin-store':
         specifier: ^2.4.3
-        version: link:../../plugins/store
+        version: 2.4.4
       '@tauri-apps/plugin-updater':
         specifier: ^2.10.1
         version: link:../../plugins/updater
@@ -139,6 +139,12 @@ importers:
         specifier: ^8.0.1
         version: 8.0.5(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.3)(jiti@2.6.1)(terser@5.46.1)(tsx@4.19.2)
 
+  plugins/accessibility:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.11.0
+        version: 2.11.0
+
   plugins/autostart:
     dependencies:
       '@tauri-apps/api':
@@ -164,6 +170,12 @@ importers:
         version: 2.11.0
 
   plugins/clipboard-manager:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.11.0
+        version: 2.11.0
+
+  plugins/continuation:
     dependencies:
       '@tauri-apps/api':
         specifier: ^2.11.0
@@ -234,6 +246,12 @@ importers:
         specifier: ^2.11.0
         version: 2.11.0
 
+  plugins/huawei-account:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.11.0
+        version: 2.11.0
+
   plugins/log:
     dependencies:
       '@tauri-apps/api':
@@ -271,6 +289,12 @@ importers:
         version: 2.11.0
 
   plugins/process:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.11.0
+        version: 2.11.0
+
+  plugins/screenshot:
     dependencies:
       '@tauri-apps/api':
         specifier: ^2.11.0
@@ -1125,6 +1149,18 @@ packages:
     resolution: {integrity: sha512-W5Wbuqsb2pHFPTj4TaRNKTj5rwXhDShPiLSY9T18y4ouSR/NNCptAEFxFsBtyNRgL6Vs1a/q9LzfqqYzEwC+Jw==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-barcode-scanner@2.4.5':
+    resolution: {integrity: sha512-sIPRYEfxww8/y8skZ2LcAp/h5bwvlHkQiq+3w6QEl+2BHs13xnpn7hP+pv4fkBs8DyDfpUbOBIYS5YBwP7x1QQ==}
+
+  '@tauri-apps/plugin-dialog@2.7.2':
+    resolution: {integrity: sha512-pX0IGm1I3I6wc+zeKYcq1GSqogK6okCNX5fOdaNU5ab1AjGS6l1E5wFNjEb7meg7ZFSp0JUs+0jQGQNyOvLrsg==}
+
+  '@tauri-apps/plugin-global-shortcut@2.3.2':
+    resolution: {integrity: sha512-UReHNXrLvpEjylE4jb4oCYiy96uRykPUthoCQCmRXYrd5hs5X9DrW+qOn7GLW57EJN4tdK8bgK5twBTz2NOxzA==}
+
+  '@tauri-apps/plugin-store@2.4.4':
+    resolution: {integrity: sha512-oxSMaj/QpVfJcBMYX5aOQV94fWvga0MwQMfD6TLlbK2dh+ShPWAzefd8HWXhvOKjPRJdGVAkW7ZGO76JzzjaDA==}
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
@@ -2470,6 +2506,22 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.11.0
       '@tauri-apps/cli-win32-ia32-msvc': 2.11.0
       '@tauri-apps/cli-win32-x64-msvc': 2.11.0
+
+  '@tauri-apps/plugin-barcode-scanner@2.4.5':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
+
+  '@tauri-apps/plugin-dialog@2.7.2':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
+
+  '@tauri-apps/plugin-global-shortcut@2.3.2':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
+
+  '@tauri-apps/plugin-store@2.4.4':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
 
   '@tybys/wasm-util@0.10.1':
     dependencies:

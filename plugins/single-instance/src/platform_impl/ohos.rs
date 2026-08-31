@@ -24,7 +24,20 @@ pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
             // not on initial onCreate. This guarantees the callback
             // fires only when a second instance is attempted.
             if let RunEvent::Opened { urls } = event {
-                let params_json = openharmony_ability::take_want_parameters();
+                use openharmony_ability_plugin_deep_link::DeepLinkExt;
+
+                let params_json = if let Ok(guard) = tauri::ohos::APP.lock() {
+                    if let Some(ohos_app) = guard.as_ref() {
+                        match ohos_app.deep_link() {
+                            Ok(client) => client.take_want_parameters(),
+                            Err(_) => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
                 let uri = urls
                     .first()
                     .map(|u| u.to_string())

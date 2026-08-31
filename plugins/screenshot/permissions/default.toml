@@ -1,0 +1,10 @@
+"$schema" = "schemas/schema.json"
+[default]
+description = """
+Screenshot permissions.
+Enables the capture_webview and pick_color commands.
+"""
+permissions = [
+  "allow-capture-webview",
+  "allow-pick-color",
+]

@@ -209,7 +209,10 @@ impl Default for NotificationData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+// Serialize is OHOS-only (get_pending/get_active are typed Rust commands on
+// OHOS); upstream desktop serializes its own local types.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(target_env = "ohos", derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct PendingNotification {
     id: i32,
@@ -236,7 +239,8 @@ impl PendingNotification {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(target_env = "ohos", derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveNotification {
     id: i32,
@@ -308,29 +312,47 @@ impl ActiveNotification {
 }
 
 #[cfg(any(mobile, target_env = "ohos"))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
+// Deserialize is OHOS-only: the OHOS port exposes register_action_types as a
+// typed Rust command; upstream mobile routes the raw payload to Kotlin/Swift
+// and never deserializes here.
+#[cfg_attr(target_env = "ohos", derive(Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub struct ActionType {
     id: String,
     actions: Vec<Action>,
+    // OHOS only: JS API omits optional fields; upstream mobile never
+    // deserializes this struct so the attribute is inert on Android/iOS.
+    #[cfg_attr(target_env = "ohos", serde(skip_serializing_if = "Option::is_none"))]
     hidden_previews_body_placeholder: Option<String>,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     custom_dismiss_action: bool,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     allow_in_car_play: bool,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     hidden_previews_show_title: bool,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     hidden_previews_show_subtitle: bool,
 }
 
 #[cfg(any(mobile, target_env = "ohos"))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(target_env = "ohos", derive(Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub struct Action {
     id: String,
     title: String,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     requires_authentication: bool,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     foreground: bool,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     destructive: bool,
+    #[cfg_attr(target_env = "ohos", serde(default))]
     input: bool,
+    #[cfg_attr(target_env = "ohos", serde(skip_serializing_if = "Option::is_none"))]
     input_button_title: Option<String>,
+    #[cfg_attr(target_env = "ohos", serde(skip_serializing_if = "Option::is_none"))]
     input_placeholder: Option<String>,
 }
 
@@ -371,19 +393,21 @@ mod android {
     pub struct Channel {
         id: String,
         name: String,
-        #[serde(default)]
+        // OHOS-only tolerance (JS omits optional fields); upstream Android
+        // routes channel payloads raw to Kotlin and never deserializes here.
+        #[cfg_attr(target_env = "ohos", serde(default))]
         description: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(target_env = "ohos", serde(default))]
         sound: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(target_env = "ohos", serde(default))]
         lights: bool,
-        #[serde(default)]
+        #[cfg_attr(target_env = "ohos", serde(default))]
         light_color: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(target_env = "ohos", serde(default))]
         vibration: bool,
-        #[serde(default)]
+        #[cfg_attr(target_env = "ohos", serde(default))]
         importance: Importance,
-        #[serde(default)]
+        #[cfg_attr(target_env = "ohos", serde(default))]
         visibility: Option<Visibility>,
     }
 

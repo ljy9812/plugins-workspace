@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-#![cfg(mobile)]
+#![cfg(any(mobile, target_env = "ohos"))]
 
 use serde::Serialize;
 use tauri::{
@@ -22,6 +22,9 @@ const PLUGIN_IDENTIFIER: &str = "app.tauri.biometric";
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_biometric);
+
+#[cfg(target_env = "ohos")]
+const PLUGIN_IDENTIFIER: &str = "@tauri/plugin-biometric";
 
 /// Access to the biometric APIs.
 pub struct Biometric<R: Runtime>(PluginHandle<R>);
@@ -64,6 +67,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "BiometricPlugin")?;
             #[cfg(target_os = "ios")]
             let handle = api.register_ios_plugin(init_plugin_biometric)?;
+            #[cfg(target_env = "ohos")]
+            let handle = api.register_ohos_plugin(PLUGIN_IDENTIFIER, "BiometricPlugin")?;
             app.manage(Biometric(handle));
             Ok(())
         })

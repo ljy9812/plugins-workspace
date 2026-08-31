@@ -25,6 +25,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
 thiserror = { workspace = true }
+log = { workspace = true }
 
 # OHOS: bridge to openharmony-ability's `account` feature (p1). Cargo feature
 # unification enables `account` across the whole build, so `HuaweiAccount` is

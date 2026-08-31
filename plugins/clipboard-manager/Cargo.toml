@@ -19,7 +19,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "partial", notes = "Only plain-text content support" }
 ios = { level = "partial", notes = "Only plain-text content support" }
-ohos = { level = "partial", notes = "write_image only; write_text/read_text/etc. not yet supported" }
+ohos = { level = "partial", notes = "write_image, write_text, read_text, write_html, clear supported; read_image not supported (READ_PASTEBOARD permission restriction)" }
 
 
 [build-dependencies]
@@ -39,4 +39,5 @@ tauri = { workspace = true, features = ["wry"] }
 arboard = { version = "3", features = ["wayland-data-control"] }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["clipboard"] }
+openharmony-ability-plugin-clipboard = { path = "../../../openharmony-ability/crates/plugin-clipboard" }
+futures-executor = "0.3"

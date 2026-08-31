@@ -102,7 +102,7 @@ async function writeImage(
  * #### Platform-specific
  *
  * - **Android / iOS:** Not supported.
- * - **HarmonyOS (OHOS):** Not supported (write only).
+ * - **HarmonyOS (OHOS):** Not supported (READ_PASTEBOARD permission restriction).
  *
  * @example
  * ```typescript
@@ -126,6 +126,7 @@ async function readImage(): Promise<Image> {
  * #### Platform-specific
  *
  * - **Android / iOS:** Not supported.
+ * - **HarmonyOS (OHOS):** Supported via pasteboard HTML MIME type. The `altText` parameter is ignored (OHOS clipboard does not support alternate representations).
  *
  * @example
  * ```typescript
@@ -154,6 +155,7 @@ async function writeHtml(html: string, altText?: string): Promise<void> {
  * #### Platform-specific
  *
  * - **Android:** Only supported on SDK 28+. For older releases we write an empty string to the clipboard instead.
+ * - **HarmonyOS (OHOS):** Supported via `systemPasteboard.clearData()`.
  *
  * @example
  * ```typescript

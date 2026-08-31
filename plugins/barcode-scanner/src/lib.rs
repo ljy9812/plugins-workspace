@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-#![cfg(mobile)]
+#![cfg(any(mobile, target_env = "ohos"))]
 
 use tauri::{
     plugin::{Builder, PluginHandle, TauriPlugin},
@@ -21,6 +21,9 @@ const PLUGIN_IDENTIFIER: &str = "app.tauri.barcodescanner";
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_barcode_scanner);
+
+#[cfg(target_env = "ohos")]
+const PLUGIN_IDENTIFIER: &str = "@tauri/plugin-barcode-scanner";
 
 /// Access to the scanner APIs.
 pub struct BarcodeScanner<R: Runtime>(PluginHandle<R>);
@@ -46,6 +49,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "BarcodeScannerPlugin")?;
             #[cfg(target_os = "ios")]
             let handle = api.register_ios_plugin(init_plugin_barcode_scanner)?;
+            #[cfg(target_env = "ohos")]
+            let handle = api.register_ohos_plugin(PLUGIN_IDENTIFIER, "BarcodeScannerPlugin")?;
             app.manage(BarcodeScanner(handle));
             Ok(())
         })

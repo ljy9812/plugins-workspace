@@ -40,3 +40,11 @@ pub(crate) async fn request_permissions<R: Runtime>(
 ) -> Result<PermissionStatus> {
     app.geolocation().request_permissions(permissions)
 }
+
+/// OHOS only: opens the system location settings page so the user can enable
+/// the location master switch (BusinessError 3301100 gate) and app permissions.
+#[cfg(target_env = "ohos")]
+#[command]
+pub(crate) async fn open_location_settings<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.geolocation().open_location_settings()
+}

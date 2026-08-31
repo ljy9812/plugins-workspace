@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pick-color"
+description = "Enables the pick_color command without any pre-configured scope."
+commands.allow = ["pick_color"]
+
+[[permission]]
+identifier = "deny-pick-color"
+description = "Denies the pick_color command without any pre-configured scope."
+commands.deny = ["pick_color"]
