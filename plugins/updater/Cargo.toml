@@ -67,7 +67,7 @@ flate2 = "1"
 osakit = { version = "0.3", features = ["full"] }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["updater"] }
+openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git", features = ["updater"] }
 
 [features]
 default = ["rustls-tls", "zip"]

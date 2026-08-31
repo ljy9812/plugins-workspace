@@ -39,5 +39,5 @@ tauri = { workspace = true, features = ["wry"] }
 arboard = { version = "3", features = ["wayland-data-control"] }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability-plugin-clipboard = { path = "../../../openharmony-ability/crates/plugin-clipboard" }
+openharmony-ability-plugin-clipboard = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
 futures-executor = "0.3"

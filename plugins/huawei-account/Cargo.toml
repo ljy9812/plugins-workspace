@@ -31,4 +31,4 @@ log = { workspace = true }
 # unification enables `account` across the whole build, so `HuaweiAccount` is
 # available without touching the tauri core crate's openharmony-ability dep.
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["account"] }
+openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git", features = ["account"] }

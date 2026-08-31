@@ -28,5 +28,5 @@ thiserror = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability-plugin-accessibility = { path = "../../../openharmony-ability/crates/plugin-accessibility" }
+openharmony-ability-plugin-accessibility = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
 futures-executor = "0.3"

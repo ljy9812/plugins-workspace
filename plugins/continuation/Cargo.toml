@@ -28,4 +28,4 @@ thiserror = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability-plugin-continuation = { path = "../../../openharmony-ability/crates/plugin-continuation" }
+openharmony-ability-plugin-continuation = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }

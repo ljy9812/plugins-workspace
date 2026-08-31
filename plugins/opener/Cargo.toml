@@ -62,5 +62,5 @@ features = ["std", "NSURL", "NSArray", "NSString"]
 tauri = { workspace = true, features = ["wry"] }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability-plugin-url = { path = "../../../openharmony-ability/crates/plugin-url" }
+openharmony-ability-plugin-url = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
 url = { workspace = true }
