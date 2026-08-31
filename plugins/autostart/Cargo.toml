@@ -30,4 +30,5 @@ thiserror = { workspace = true }
 auto-launch = "0.5"
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
+openharmony-ability-plugin-autostart = { path = "../../../openharmony-ability/crates/plugin-autostart" }
+log = { workspace = true }

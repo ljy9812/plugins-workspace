@@ -42,7 +42,7 @@ features = [
 zbus = { workspace = true }
 
 [target.'cfg(target_env = "ohos")'.dependencies]
-openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
+openharmony-ability-plugin-deep-link = { path = "../../../openharmony-ability/crates/plugin-deep-link" }
 
 [features]
 semver = ["dep:semver"]

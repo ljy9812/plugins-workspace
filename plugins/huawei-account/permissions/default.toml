@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+[default]
+description = """
+Huawei account one-tap login permissions.
+Enables the login, silent_login, and logout commands.
+"""
+permissions = [
+  "allow-login",
+  "allow-silent-login",
+  "allow-logout",
+]

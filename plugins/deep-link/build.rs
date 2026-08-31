@@ -72,7 +72,68 @@ fn intent_filter(domain: &AssociatedDomain) -> String {
     .to_string()
 }
 
+fn ohos_skill(domain: &AssociatedDomain) -> serde_json::Value {
+    let mut uris: Vec<serde_json::Value> = Vec::new();
+    for scheme in &domain.scheme {
+        let mut base = serde_json::Map::new();
+        base.insert(
+            "scheme".to_string(),
+            serde_json::Value::String(scheme.clone()),
+        );
+        if let Some(host) = &domain.host {
+            base.insert("host".to_string(), serde_json::Value::String(host.clone()));
+        }
+        let mut has_path = false;
+        for p in &domain.path {
+            let mut uri = base.clone();
+            uri.insert("path".to_string(), serde_json::Value::String(p.clone()));
+            uris.push(serde_json::Value::Object(uri));
+            has_path = true;
+        }
+        for p in &domain.path_pattern {
+            let mut uri = base.clone();
+            uri.insert(
+                "pathRegex".to_string(),
+                serde_json::Value::String(p.clone()),
+            );
+            uris.push(serde_json::Value::Object(uri));
+            has_path = true;
+        }
+        for p in &domain.path_prefix {
+            let mut uri = base.clone();
+            uri.insert(
+                "pathStartWith".to_string(),
+                serde_json::Value::String(p.clone()),
+            );
+            uris.push(serde_json::Value::Object(uri));
+            has_path = true;
+        }
+        if !domain.path_suffix.is_empty() {
+            println!("cargo:warning=deep-link: path_suffix is not supported on OHOS, skipping");
+        }
+        if !has_path {
+            uris.push(serde_json::Value::Object(base));
+        }
+    }
+    let mut skill = serde_json::Map::new();
+    skill.insert(
+        "entities".to_string(),
+        serde_json::json!(["entity.system.browsable"]),
+    );
+    skill.insert(
+        "actions".to_string(),
+        serde_json::json!(["ohos.want.action.viewData"]),
+    );
+    skill.insert("uris".to_string(), serde_json::Value::Array(uris));
+    if domain.is_app_link() {
+        skill.insert("domainVerify".to_string(), serde_json::Value::Bool(true));
+    }
+    serde_json::Value::Object(skill)
+}
+
 fn main() {
+    println!("cargo:rerun-if-env-changed=TAURI_OHOS_PROJECT_PATH");
+    println!("cargo:rerun-if-env-changed=OHOS_DEVICE_TYPE");
     let result = tauri_plugin::Builder::new(COMMANDS)
         .global_api_script_path("./api-iife.js")
         .android_path("android")
@@ -183,6 +244,13 @@ fn main() {
                 })
                 .expect("failed to update Info.plist");
             }
+        }
+        // OHOS: inject deep-link skills into module.json5 (gated by CARGO_CFG_TARGET_ENV,
+        // cross-compilation safe — cfg! doesn't work in build.rs for host≠target)
+        if std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default() == "ohos" {
+            let skills: Vec<serde_json::Value> = config.mobile.iter().map(ohos_skill).collect();
+            tauri_plugin::mobile::update_ohos_module_json(serde_json::Value::Array(skills))
+                .expect("failed to update OHOS module.json5");
         }
     }
 }

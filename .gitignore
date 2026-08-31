@@ -63,3 +63,8 @@ pids
 debug.log
 TODO.md
 .aider.*
+Cargo.lock
+
+# ── OHOS build artifacts ──
+*.har
+*.hap

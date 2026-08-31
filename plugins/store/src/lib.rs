@@ -129,6 +129,16 @@ async fn load<R: Runtime>(
     options: Option<LoadStoreOptions>,
 ) -> Result<ResourceId> {
     let builder = builder(app, store_state, path, options)?;
+    // OHOS: build_inner 含同步 fs::read,移入 spawn_blocking 避免阻塞 tokio worker(规避 appfreeze)。
+    // 其他平台保留原 inline 调用,行为/错误处理逐处不变。
+    #[cfg(target_env = "ohos")]
+    let (_, rid) = tauri::async_runtime::spawn_blocking(move || builder.build_inner())
+        .await
+        .map_err(|e| {
+            tracing::error!("store load spawn_blocking join failed: {}", e);
+            crate::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+        })??;
+    #[cfg(not(target_env = "ohos"))]
     let (_, rid) = builder.build_inner()?;
     Ok(rid)
 }

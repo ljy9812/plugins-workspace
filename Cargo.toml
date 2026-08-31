@@ -40,9 +40,22 @@ lto = true
 incremental = false
 opt-level = "s"
 
-# Patch tauri-plugin to use the fork with OHOS support (ohos_path API).
-# Remove this section once the OHOS changes are merged and published to crates.io.
+# Patch the Tauri stack to local forks with OHOS support: the crates.io
+# releases of tauri/tauri-runtime/tauri-runtime-wry/wry/tao/muda/tray-icon lack
+# `not(target_env = "ohos")` on their Linux gtk deps, which pulls gio-sys and
+# breaks OHOS cross-compilation. Remove these patches once the OHOS changes
+# are merged upstream and published to crates.io.
 [patch.crates-io]
-tauri-plugin = { git = "https://github.com/Eulogizethesun/tauri", branch = "ohdev" }
-openharmony-ability = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
-openharmony-ability-derive = { git = "https://github.com/Eulogizethesun/openharmony-ability", branch = "ohdev-git" }
+tauri = { path = "../tauri/crates/tauri" }
+tauri-build = { path = "../tauri/crates/tauri-build" }
+tauri-utils = { path = "../tauri/crates/tauri-utils" }
+tauri-runtime = { path = "../tauri/crates/tauri-runtime" }
+tauri-runtime-wry = { path = "../tauri/crates/tauri-runtime-wry" }
+tauri-plugin = { path = "../tauri/crates/tauri-plugin" }
+wry = { path = "../wry" }
+tao = { path = "../tao" }
+muda = { path = "../muda" }
+tray-icon = { path = "../tray-icon" }
+window-vibrancy = { path = "../window-vibrancy" }
+openharmony-ability = { path = "../openharmony-ability/crates/ability" }
+openharmony-ability-derive = { path = "../openharmony-ability/crates/derive" }

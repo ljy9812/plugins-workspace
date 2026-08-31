@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "clear_watch",
     "check_permissions",
     "request_permissions",
+    "open_location_settings",
 ];
 
 fn main() {

@@ -11,7 +11,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum Error {
-    #[cfg(mobile)]
+    #[cfg(any(mobile, target_env = "ohos"))]
     #[error(transparent)]
     PluginInvoke(
         #[cfg_attr(feature = "specta", serde(skip))]

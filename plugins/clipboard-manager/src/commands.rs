@@ -7,7 +7,18 @@ use tauri::{command, image::JsImage, AppHandle, Manager, ResourceId, Runtime, St
 use crate::{Clipboard, Result};
 
 #[command]
-#[cfg(any(desktop, target_env = "ohos"))]
+#[cfg(all(desktop, not(target_env = "ohos")))]
+pub(crate) async fn write_text<R: Runtime>(
+    _app: AppHandle<R>,
+    clipboard: State<'_, Clipboard<R>>,
+    text: &str,
+    #[allow(unused)] label: Option<String>,
+) -> Result<()> {
+    clipboard.write_text(text)
+}
+
+#[command]
+#[cfg(target_env = "ohos")]
 pub(crate) async fn write_text<R: Runtime>(
     _app: AppHandle<R>,
     clipboard: State<'_, Clipboard<R>>,
@@ -42,30 +53,26 @@ pub(crate) async fn read_text<R: Runtime>(
 #[command]
 pub(crate) async fn write_image<R: Runtime>(
     webview: Webview<R>,
-    // unused on OHOS (TSFN bridge), used on desktop
-    #[allow(unused)] clipboard: State<'_, Clipboard<R>>,
+    clipboard: State<'_, Clipboard<R>>,
     image: JsImage,
 ) -> Result<()> {
-    // On OHOS, arboard (X11/Wayland clipboard) is unavailable. Instead, use
-    // the TSFN (ThreadsafeFunction) bridge in openharmony-ability to call
-    // ArkTS clipboard_write_image, which uses the OHOS PixelMap API.
+    // On OHOS, the ResourceTable MutexGuard (from webview.resources_table())
+    // is !Send and cannot be held across an async .await. Extract RGBA into an
+    // owned Vec before the bridge call, then dispatch via the OHOS clipboard
+    // bridge plugin facade (openharmony-ability-plugin-clipboard).
     #[cfg(target_env = "ohos")]
     {
-        // Extract RGBA data into owned Vec before the .await boundary.
-        // resources_table's MutexGuard is not Send, so it cannot be held
-        // across an async .await point. The block scope drops the guard
-        // before we enter the async TSFN call.
         let (rgba, width, height) = {
             let resources_table = webview.resources_table();
             let img = image.into_img(&resources_table)?;
             (img.rgba().to_vec(), img.width(), img.height())
         };
-        openharmony_ability::clipboard::clipboard_write_image(&rgba, width, height)
-            .await
-            .map_err(|e| crate::Error::Clipboard(e.to_string()))?;
+        clipboard.write_image(&rgba, width, height).await?;
         return Ok(());
     }
     // On desktop (Linux/macOS/Windows), use arboard for clipboard access.
+    // Zero-copy: arboard borrows the Image's RGBA slice directly via
+    // Cow::Borrowed, so no intermediate Vec allocation is needed.
     #[cfg(not(target_env = "ohos"))]
     {
         let resources_table = webview.resources_table();

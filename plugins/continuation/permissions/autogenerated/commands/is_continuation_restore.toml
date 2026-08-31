@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-continuation-restore"
+description = "Enables the is_continuation_restore command without any pre-configured scope."
+commands.allow = ["is_continuation_restore"]
+
+[[permission]]
+identifier = "deny-is-continuation-restore"
+description = "Denies the is_continuation_restore command without any pre-configured scope."
+commands.deny = ["is_continuation_restore"]

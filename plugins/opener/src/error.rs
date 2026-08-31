@@ -37,6 +37,12 @@ pub enum Error {
     FailedToConvertPathToItemIdList(PathBuf),
     #[error("Failed to convert path to file:// url")]
     FailedToConvertPathToFileUrl,
+    #[cfg(target_env = "ohos")]
+    #[error("OpenHarmony ability error: {0}")]
+    OpenharmonyAbility(String),
+    #[cfg(target_env = "ohos")]
+    #[error("Invalid path: {0}")]
+    InvalidPath(String),
     #[error(transparent)]
     #[cfg(any(
         target_os = "linux",
@@ -45,6 +51,7 @@ pub enum Error {
         target_os = "netbsd",
         target_os = "openbsd"
     ))]
+    #[cfg(not(target_env = "ohos"))]
     Zbus(#[from] zbus::Error),
 }
 

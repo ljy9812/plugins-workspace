@@ -114,6 +114,32 @@ Denies the get_current_position command without any pre-configured scope.
 <tr>
 <td>
 
+`geolocation:allow-open-location-settings`
+
+</td>
+<td>
+
+Enables the open_location_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`geolocation:deny-open-location-settings`
+
+</td>
+<td>
+
+Denies the open_location_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `geolocation:allow-request-permissions`
 
 </td>

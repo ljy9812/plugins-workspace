@@ -285,6 +285,28 @@ impl Builder {
                 ohos::install,
                 ohos::download_and_install,
             ])
+            .setup(move |_app, _api| {
+                // Register the Rust-side bridge plugin (UpdaterBridgePlugin, id
+                // "ohos.updater") BEFORE any check/download/install command can
+                // dispatch through it. Setup runs at build() time, after
+                // `tauri::ohos::APP` is set (tauri-macros/mobile.rs:96-101), so the
+                // app handle is available. Mirrors global-shortcut/accessibility:
+                // APP-None is unreachable, guarded only against mutex poisoning;
+                // register_plugin is non-idempotent (Err on duplicate) so failures
+                // are log-only, never propagate.
+                use openharmony_ability::UpdaterBridgePlugin;
+                if let Ok(guard) = tauri::ohos::APP.lock() {
+                    if let Some(ohos_app) = guard.as_ref() {
+                        if let Err(e) = ohos_app.register_plugin(UpdaterBridgePlugin) {
+                            log::error!(
+                                "[updater] failed to register UpdaterBridgePlugin: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            })
             .build()
     }
 }

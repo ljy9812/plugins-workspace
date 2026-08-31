@@ -16,7 +16,10 @@ const PLUGIN_IDENTIFIER: &str = "app.tauri.haptics";
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_haptics);
 
-// initializes the Kotlin or Swift plugin classes
+#[cfg(target_env = "ohos")]
+const PLUGIN_IDENTIFIER: &str = "@tauri/plugin-haptics";
+
+// initializes the Kotlin, Swift or ArkTS plugin classes
 pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
@@ -25,6 +28,8 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "HapticsPlugin")?;
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_haptics)?;
+    #[cfg(target_env = "ohos")]
+    let handle = api.register_ohos_plugin(PLUGIN_IDENTIFIER, "HapticsPlugin")?;
     Ok(Haptics(handle))
 }
 

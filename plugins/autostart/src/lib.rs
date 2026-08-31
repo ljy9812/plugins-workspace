@@ -13,7 +13,7 @@
 #[cfg(not(target_env = "ohos"))]
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 #[cfg(target_env = "ohos")]
-use openharmony_ability::AutostartManager;
+use openharmony_ability_plugin_autostart::AutostartClient;
 
 use serde::{ser::Serializer, Serialize};
 use tauri::{
@@ -79,7 +79,7 @@ impl AutoLaunchManager {
 }
 
 #[cfg(target_env = "ohos")]
-pub struct AutoLaunchManager(AutostartManager);
+pub struct AutoLaunchManager(AutostartClient);
 
 #[cfg(target_env = "ohos")]
 impl AutoLaunchManager {
@@ -278,9 +278,35 @@ impl Builder {
                 #[cfg(target_env = "ohos")]
                 {
                     // OHOS: app_name and args are not needed — autostart is managed by
-                    // the system settings page via openharmony-ability TSFN bridge
+                    // the system settings page via the bridge plugin facade.
                     let _ = self;
-                    app.manage(AutoLaunchManager(AutostartManager));
+                    use openharmony_ability_plugin_autostart::{AutostartBridgePlugin, AutostartExt};
+
+                    let ohos_app = tauri::ohos::APP
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.as_ref().map(|app| app.clone()))
+                        .ok_or_else(|| {
+                            Error::Anyhow(
+                                "Failed to create AutostartClient: OHOS APP not initialized"
+                                    .to_string(),
+                            )
+                        })?;
+
+                    // Register the Rust-side Autostart bridge plugin before creating
+                    // the client. Without this, bridge calls fail with
+                    // "Bridge plugin 'ohos.autostart' is not installed for '<module>'".
+                    if let Err(e) = ohos_app.register_plugin(AutostartBridgePlugin) {
+                        log::error!(
+                            "[autostart] failed to register AutostartBridgePlugin: {}",
+                            e
+                        );
+                    }
+
+                    let client = ohos_app
+                        .autostart()
+                        .map_err(|e| Error::Anyhow(format!("Failed to create AutostartClient: {}", e)))?;
+                    app.manage(AutoLaunchManager(client));
                 }
 
                 Ok(())

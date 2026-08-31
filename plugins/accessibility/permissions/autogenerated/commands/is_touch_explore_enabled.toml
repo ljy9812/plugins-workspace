@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-touch-explore-enabled"
+description = "Enables the is_touch_explore_enabled command without any pre-configured scope."
+commands.allow = ["is_touch_explore_enabled"]
+
+[[permission]]
+identifier = "deny-is-touch-explore-enabled"
+description = "Denies the is_touch_explore_enabled command without any pre-configured scope."
+commands.deny = ["is_touch_explore_enabled"]

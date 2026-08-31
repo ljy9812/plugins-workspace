@@ -139,14 +139,29 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     app: &AppHandle<R>,
     _api: PluginApi<R, C>,
 ) -> crate::Result<Clipboard<R>> {
+    // Register the Rust-side Clipboard bridge plugin so ArkTS configurePlugins
+    // can match it. Without this, bridge calls fail with
+    // "Bridge plugin 'ohos.clipboard' is not installed for '<module>'".
+    use openharmony_ability_plugin_clipboard::ClipboardBridgePlugin;
+    if let Ok(guard) = tauri::ohos::APP.lock() {
+        if let Some(ohos_app) = guard.as_ref() {
+            if let Err(e) = ohos_app.register_plugin(ClipboardBridgePlugin) {
+                log::error!(
+                    "[clipboard-manager] failed to register ClipboardBridgePlugin: {}",
+                    e
+                );
+            }
+        }
+    }
     Ok(Clipboard { app: app.clone() })
 }
 
 #[cfg(target_env = "ohos")]
 /// Access to the clipboard APIs.
 ///
-/// On OHOS, only `write_image` is supported (via TSFN bridge in commands.rs).
-/// All other methods return `ClipboardError::PlatformNotAvailable`.
+/// On OHOS, `write_text`, `read_text`, and `write_image` are supported via
+/// the bridge plugin facade (`openharmony-ability-plugin-clipboard`).
+/// Other methods (`write_html`, `clear`, `read_image`) return `PlatformNotAvailable`.
 pub struct Clipboard<R: Runtime> {
     #[allow(dead_code)]
     app: AppHandle<R>,
@@ -154,40 +169,110 @@ pub struct Clipboard<R: Runtime> {
 
 #[cfg(target_env = "ohos")]
 impl<R: Runtime> Clipboard<R> {
-    // TODO: Add TSFN bridge for write_text on OHOS
-    pub fn write_text<'a, T: Into<Cow<'a, str>>>(&self, _text: T) -> crate::Result<()> {
-        Err(crate::Error::Clipboard(
-            "write_text not supported on OHOS (only write_image is available)".to_string(),
-        ))
+    // write_text on OHOS: bridge plugin via openharmony-ability-plugin-clipboard.
+    // Command handler runs on a worker thread, so block_on is safe.
+    pub fn write_text<'a, T: Into<Cow<'a, str>>>(&self, text: T) -> crate::Result<()> {
+        use openharmony_ability_plugin_clipboard::ClipboardExt;
+
+        let client = tauri::ohos::APP
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|app| app.clone()))
+            .and_then(|app| app.clipboard().ok())
+            .ok_or_else(|| {
+                crate::Error::Clipboard(
+                    "Failed to create ClipboardClient: OHOS APP not initialized".to_string(),
+                )
+            })?;
+        let text = text.into().to_string();
+        futures_executor::block_on(client.write_text(text))
+            .map_err(|e| crate::Error::Clipboard(e.to_string()))
     }
 
-    /// Warning: This method should not be used on the main thread! Otherwise the underlying libraries may deadlock on Linux, freezing the whole app, when trying to copy data copied from this app, for example if the user copies text from the WebView.
-    // TODO: Add TSFN bridge for read_text on OHOS
+    // read_text on OHOS: bridge plugin via openharmony-ability-plugin-clipboard.
     pub fn read_text(&self) -> crate::Result<String> {
-        Err(crate::Error::Clipboard(
-            "read_text not supported on OHOS (only write_image is available)".to_string(),
-        ))
+        use openharmony_ability_plugin_clipboard::ClipboardExt;
+
+        let client = tauri::ohos::APP
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|app| app.clone()))
+            .and_then(|app| app.clipboard().ok())
+            .ok_or_else(|| {
+                crate::Error::Clipboard(
+                    "Failed to create ClipboardClient: OHOS APP not initialized".to_string(),
+                )
+            })?;
+        futures_executor::block_on(client.read_text())
+            .map(|opt| opt.unwrap_or_default())
+            .map_err(|e| crate::Error::Clipboard(e.to_string()))
     }
 
-    // write_image is handled via TSFN bridge in commands.rs
-    // (openharmony_ability::clipboard::clipboard_write_image)
+    // write_image on OHOS: bridge plugin facade via openharmony-ability-plugin-clipboard.
+    // RGBA data is extracted in commands.rs before the .await boundary
+    // (the ResourceTable MutexGuard is !Send and cannot cross .await).
+    pub async fn write_image(&self, rgba: &[u8], width: u32, height: u32) -> crate::Result<()> {
+        use openharmony_ability_plugin_clipboard::ClipboardExt;
 
-    // TODO: Add TSFN bridge for write_html on OHOS
+        let client = tauri::ohos::APP
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|app| app.clone()))
+            .and_then(|app| app.clipboard().ok())
+            .ok_or_else(|| {
+                crate::Error::Clipboard(
+                    "Failed to create ClipboardClient: OHOS APP not initialized".to_string(),
+                )
+            })?;
+        client
+            .write_image(rgba, width, height)
+            .await
+            .map_err(|e| crate::Error::Clipboard(e.to_string()))?;
+        Ok(())
+    }
+
+    // write_html on OHOS: bridge plugin facade via openharmony-ability-plugin-clipboard.
+    // Uses block_on (same pattern as read_text) — clipboard commands run on a
+    // worker thread, not the main thread, so blocking on the bridge call is safe.
     pub fn write_html<'a, T: Into<Cow<'a, str>>>(
         &self,
-        _html: T,
+        html: T,
         _alt_text: Option<T>,
     ) -> crate::Result<()> {
-        Err(crate::Error::Clipboard(
-            "write_html not supported on OHOS (only write_image is available)".to_string(),
-        ))
+        use openharmony_ability_plugin_clipboard::ClipboardExt;
+
+        let client = tauri::ohos::APP
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|app| app.clone()))
+            .and_then(|app| app.clipboard().ok())
+            .ok_or_else(|| {
+                crate::Error::Clipboard(
+                    "Failed to create ClipboardClient: OHOS APP not initialized".to_string(),
+                )
+            })?;
+        futures_executor::block_on(client.write_html(html.into().to_string()))
+            .map_err(|e| crate::Error::Clipboard(e.to_string()))?;
+        Ok(())
     }
 
-    // TODO: Add TSFN bridge for clear on OHOS
+    // clear on OHOS: bridge plugin facade via openharmony-ability-plugin-clipboard.
     pub fn clear(&self) -> crate::Result<()> {
-        Err(crate::Error::Clipboard(
-            "clear not supported on OHOS (only write_image is available)".to_string(),
-        ))
+        use openharmony_ability_plugin_clipboard::ClipboardExt;
+
+        let client = tauri::ohos::APP
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|app| app.clone()))
+            .and_then(|app| app.clipboard().ok())
+            .ok_or_else(|| {
+                crate::Error::Clipboard(
+                    "Failed to create ClipboardClient: OHOS APP not initialized".to_string(),
+                )
+            })?;
+        futures_executor::block_on(client.clear())
+            .map_err(|e| crate::Error::Clipboard(e.to_string()))?;
+        Ok(())
     }
 
     /// Warning: This method should not be used on the main thread! Otherwise the underlying libraries may deadlock on Linux, freezing the whole app, when trying to copy data copied from this app, for example if the user copies text from the WebView.

@@ -56,7 +56,7 @@ windows-sys = { version = "0.60.0", features = [
   "Win32_UI_Shell",
 ] }
 
-[target."cfg(target_os = \"linux\")".dependencies]
+[target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
 dirs = "6"
 tar = { version = "0.4", optional = true }
 flate2 = { version = "1", optional = true }
@@ -65,6 +65,9 @@ flate2 = { version = "1", optional = true }
 tar = "0.4"
 flate2 = "1"
 osakit = { version = "0.3", features = ["full"] }
+
+[target.'cfg(target_env = "ohos")'.dependencies]
+openharmony-ability = { path = "../../../openharmony-ability/crates/ability", features = ["updater"] }
 
 [features]
 default = ["rustls-tls", "zip"]

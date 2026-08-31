@@ -29,7 +29,7 @@ log = { workspace = true }
 thiserror = { workspace = true }
 specta = { workspace = true, optional = true }
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_env = "ohos"))'.dependencies]
 tauri = { workspace = true, features = ["wry"] }
 
 [features]

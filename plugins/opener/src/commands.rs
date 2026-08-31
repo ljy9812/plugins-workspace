@@ -19,25 +19,30 @@ pub async fn open_url<R: Runtime>(
     url: String,
     with: Option<String>,
 ) -> crate::Result<()> {
-    let scope = Scope::new(
-        &app,
-        command_scope
-            .allows()
-            .iter()
-            .chain(global_scope.allows())
-            .collect(),
-        command_scope
-            .denies()
-            .iter()
-            .chain(global_scope.denies())
-            .collect(),
-    );
-
-    if scope.is_url_allowed(&url, with.as_deref()) {
-        app.opener().open_url(url, with)
-    } else {
-        Err(Error::ForbiddenUrl { url, with })
+    let allowed = {
+        let scope = Scope::new(
+            &app,
+            command_scope
+                .allows()
+                .iter()
+                .chain(global_scope.allows())
+                .collect(),
+            command_scope
+                .denies()
+                .iter()
+                .chain(global_scope.denies())
+                .collect(),
+        );
+        scope.is_url_allowed(&url, with.as_deref())
+    };
+    if !allowed {
+        return Err(Error::ForbiddenUrl { url, with });
     }
+
+    #[cfg(target_env = "ohos")]
+    return app.opener().open_url(url, with).await;
+    #[cfg(not(target_env = "ohos"))]
+    app.opener().open_url(url, with)
 }
 
 #[tauri::command]
@@ -48,29 +53,37 @@ pub async fn open_path<R: Runtime>(
     path: String,
     with: Option<String>,
 ) -> crate::Result<()> {
-    let scope = Scope::new(
-        &app,
-        command_scope
-            .allows()
-            .iter()
-            .chain(global_scope.allows())
-            .collect(),
-        command_scope
-            .denies()
-            .iter()
-            .chain(global_scope.denies())
-            .collect(),
-    );
-
-    if scope.is_path_allowed(Path::new(&path), with.as_deref())? {
-        app.opener().open_path(path, with)
-    } else {
-        Err(Error::ForbiddenPath { path, with })
+    let allowed = {
+        let scope = Scope::new(
+            &app,
+            command_scope
+                .allows()
+                .iter()
+                .chain(global_scope.allows())
+                .collect(),
+            command_scope
+                .denies()
+                .iter()
+                .chain(global_scope.denies())
+                .collect(),
+        );
+        scope.is_path_allowed(Path::new(&path), with.as_deref())?
+    };
+    if !allowed {
+        return Err(Error::ForbiddenPath { path, with });
     }
+
+    #[cfg(target_env = "ohos")]
+    return app.opener().open_path(path, with).await;
+    #[cfg(not(target_env = "ohos"))]
+    app.opener().open_path(path, with)
 }
 
 /// TODO: in the next major version, rename to `reveal_items_in_dir`
 #[tauri::command]
 pub async fn reveal_item_in_dir(paths: Vec<PathBuf>) -> crate::Result<()> {
+    #[cfg(target_env = "ohos")]
+    return crate::reveal_items_in_dir(&paths).await;
+    #[cfg(not(target_env = "ohos"))]
     crate::reveal_items_in_dir(&paths)
 }
