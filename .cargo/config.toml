@@ -1,0 +1,26 @@
+# OpenHarmony Artifactory cargo registry (virtual repo: locally published
+# adapted crates take priority over the crates.io remote fallback; downloads
+# need no authentication).
+#
+# Replacing crates.io makes every registry dependency of this workspace
+# resolve through the artifactory. In particular stronghold-runtime 2.0.1:
+# its OHOS adaptation (nix excluded from the OHOS dependency graph +
+# upstream DirectAlloc misaligned-offset fix) is published there under the
+# same version number with an adapted checksum, so the normal version
+# requirement resolves to the adapted build without any patch entry.
+#
+# Why source replacement instead of
+# [patch.crates-io] stronghold-runtime = { version = "2.0.1", registry = "ohos" }:
+# a registry patch moves the patched crate's own dependency subtree to that
+# registry while its dependents (iota_stronghold) stay on crates.io - the
+# same crate then exists twice from two sources and shared trait types
+# (zeroize) stop unifying across the boundary, breaking the build.
+#
+# Reference source of the adaptation: ohos branch of the public fork
+# https://gitcode.com/dragonswordy/stronghold.rs. Remove this replacement
+# once upstream stronghold.rs ships an OHOS-compatible release.
+[source.crates-io]
+replace-with = "ohos-mirror"
+
+[source.ohos-mirror]
+registry = "sparse+https://crates.repo.openharmony.cn/artifactory/api/cargo/openharmony-cargo/index/"

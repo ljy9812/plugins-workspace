@@ -97,6 +97,8 @@ fn init_deep_link<R: Runtime>(
         return Ok(DeepLink {
             app: app.clone(),
             current: Default::default(),
+            #[cfg(target_env = "ohos")]
+            ohos_window_current: Default::default(),
             config: api.config().clone(),
         });
     }
@@ -107,6 +109,11 @@ fn init_deep_link<R: Runtime>(
         let deep_link = DeepLink {
             app: app.clone(),
             current: Default::default(),
+            // OHOS desktop builds compile this block too (cfg(desktop) is true
+            // there); the ohos branch above returns early so this initializer
+            // is dead code on device but must still typecheck.
+            #[cfg(target_env = "ohos")]
+            ohos_window_current: Default::default(),
             config: api.config().clone(),
         };
         deep_link.handle_cli_arguments(args);
@@ -209,6 +216,16 @@ mod imp {
     pub struct DeepLink<R: Runtime> {
         pub(crate) app: AppHandle<R>,
         pub(crate) current: Mutex<Option<Vec<url::Url>>>,
+        /// OpenHarmony per-window deep-link memo (openspec multi-uiability-windows
+        /// design.md D9): cold-start lazy-takes keyed by the calling window's
+        /// UIAbility id, so a spawned window never surfaces the primary's link.
+        /// The shared `current` stays primary-scoped on OHOS — its only live
+        /// writer there is this same lazy-take path (no OHOS producer emits
+        /// RunEvent::Opened), so falling back to it from another window would
+        /// cross-talk (P3-3).
+        #[cfg(target_env = "ohos")]
+        pub(crate) ohos_window_current:
+            Mutex<std::collections::HashMap<i64, Vec<url::Url>>>,
         pub(crate) config: Option<crate::config::Config>,
     }
 
@@ -287,10 +304,88 @@ mod imp {
             return Ok(self.current.lock().unwrap().clone());
         }
 
+        /// Get the current URLs that triggered the deep link of the given window's
+        /// UIAbility instance.
+        ///
+        /// ## Platform-specific:
+        ///
+        /// - **OpenHarmony**: Resolves `window`'s label to its pre-allocated UIAbility
+        ///   window id (design.md D9, openspec multi-uiability-windows) and lazy-takes
+        ///   that instance's cold-start want uri; a label that never spawned a
+        ///   UIAbility instance resolves to the primary instance (window id 0).
+        /// - **All other platforms**: Behaves like [`get_current`](Self::get_current);
+        ///   `window` is ignored.
+        pub fn get_current_for_window(
+            &self,
+            window: &tauri::Window<R>,
+        ) -> crate::Result<Option<Vec<url::Url>>> {
+            #[cfg(target_env = "ohos")]
+            {
+                use openharmony_ability_plugin_deep_link::{DeepLinkExt, window_id_for_label};
+
+                let label = window.label();
+                let window_id = window_id_for_label(label);
+                // Lazy take: first call reads this instance's cold-start want.uri
+                // (stored by its onAbilityCreateWithWant with its window id).
+                let initial = if let Ok(guard) = tauri::ohos::APP.lock() {
+                    if let Some(app) = guard.as_ref() {
+                        match app.deep_link() {
+                            Ok(client) => client.take_initial_uri_for_window(window_id),
+                            Err(_) => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+                // Debug level: the payload carries the full URI, which can
+                // embed tokens (same policy as the get_current path above).
+                tracing::debug!(
+                    "[deep-link] get_current_for_window(label={label}, id={window_id}) lazy-take returned: {initial:?}"
+                );
+                if !initial.is_empty() {
+                    if let Ok(url) = initial.parse::<url::Url>() {
+                        let urls = vec![url];
+                        self.ohos_window_current
+                            .lock()
+                            .unwrap()
+                            .insert(window_id, urls.clone());
+                        return Ok(Some(urls));
+                    } else {
+                        tracing::warn!(
+                            "[deep-link] failed to parse initial want uri: {}",
+                            initial
+                        );
+                    }
+                }
+                // Per-window fallback (D9): never the shared `current` — on OHOS
+                // it only ever holds the primary's link (no OHOS producer emits
+                // RunEvent::Opened), so a spawned window reading it would
+                // surface the primary's URI (P3-3 cross-talk). Repeat calls for
+                // this window return its own memoized lazy-take instead.
+                return Ok(self
+                    .ohos_window_current
+                    .lock()
+                    .unwrap()
+                    .get(&window_id)
+                    .cloned());
+            }
+            #[cfg(not(target_env = "ohos"))]
+            {
+                let _ = window;
+                Ok(self.current.lock().unwrap().clone())
+            }
+        }
+
         /// Registers all schemes defined in the configuration file.
         ///
         /// This is useful to ensure the schemes are registered even if the user did not install the app properly
         /// (e.g. an AppImage that was not properly registered with an AppImage launcher).
+        ///
+        /// ## Platform-specific:
+        ///
+        /// - **OpenHarmony**: Returns an error — runtime scheme registration is unsupported (see [`register`](Self::register)).
         pub fn register_all(&self) -> crate::Result<()> {
             let Some(config) = &self.config else {
                 return Ok(());
@@ -311,12 +406,14 @@ mod imp {
         ///
         /// - **Linux**: Needs the `xdg-mime` and `update-desktop-database` commands available on the system.
         /// - **macOS / Android / iOS**: Unsupported, will return [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`).
-        /// - **OpenHarmony**: No-op — schemes are statically registered in `module.json5` at build time; returns `Ok(())`.
+        /// - **OpenHarmony**: Returns an error — schemes are statically declared in `module.json5` at build time and cannot be registered at runtime.
         pub fn register<S: AsRef<str>>(&self, _protocol: S) -> crate::Result<()> {
             #[cfg(target_env = "ohos")]
             {
                 let _ = _protocol;
-                return Ok(());
+                return Err(crate::Error::UnsupportedOnOpenHarmony(
+                    "register is not supported on OpenHarmony: deep link schemes are statically declared in module.json5 at build time".to_string(),
+                ));
             }
 
             #[cfg(windows)]
@@ -439,12 +536,14 @@ mod imp {
         ///   (this can happen when registered from the NSIS installer when the install mode is set to both or per machine)
         /// - **Linux**: Can only unregister the scheme if it was initially registered with [`register`](`Self::register`). May not work on older distros.
         /// - **macOS / Android / iOS**: Unsupported, will return [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`).
-        /// - **OpenHarmony**: No-op — schemes are statically registered in `module.json5`; returns `Ok(())`.
+        /// - **OpenHarmony**: Returns an error — schemes are statically declared in `module.json5`; there is no runtime unregistration.
         pub fn unregister<S: AsRef<str>>(&self, _protocol: S) -> crate::Result<()> {
             #[cfg(target_env = "ohos")]
             {
                 let _ = _protocol;
-                return Ok(());
+                return Err(crate::Error::UnsupportedOnOpenHarmony(
+                    "unregister is not supported on OpenHarmony: deep link schemes are statically declared in module.json5 at build time".to_string(),
+                ));
             }
 
             #[cfg(windows)]
@@ -498,12 +597,14 @@ mod imp {
         ///
         /// - **Linux**: Needs the `xdg-mime` command available on the system.
         /// - **macOS / Android / iOS**: Unsupported, will return [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`).
-        /// - **OpenHarmony**: Always returns `Ok(false)` — registration is static (build-time `module.json5`), not queryable at runtime.
+        /// - **OpenHarmony**: Returns an error — registration is static (build-time `module.json5`), not queryable at runtime.
         pub fn is_registered<S: AsRef<str>>(&self, _protocol: S) -> crate::Result<bool> {
             #[cfg(target_env = "ohos")]
             {
                 let _ = _protocol;
-                return Ok(false);
+                return Err(crate::Error::UnsupportedOnOpenHarmony(
+                    "isRegistered is not supported on OpenHarmony: deep link registration is static (module.json5) and cannot be queried at runtime".to_string(),
+                ));
             }
 
             #[cfg(windows)]
@@ -633,6 +734,36 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
                     .lock()
                     .unwrap()
                     .replace(urls.clone());
+            }
+
+            // OHOS (openspec multi-uiability-windows design.md D13): drop the
+            // per-window deep-link memo when its window is destroyed. A tauri
+            // plugin cannot observe the ability crate's AbilityDestroyed
+            // event, so hook the runtime's WindowEvent::Destroyed instead.
+            // The id != 0 guard matters: Float sub-windows and labels never
+            // registered resolve to 0, and removing key 0 would wipe the
+            // primary's memo (tauri labels are globally unique, so a Float
+            // label can never collide with a spawned UIAbility window's).
+            #[cfg(target_env = "ohos")]
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = _event
+            {
+                use openharmony_ability_plugin_deep_link::window_id_for_label;
+
+                let window_id = window_id_for_label(label);
+                if window_id != 0 {
+                    _app.state::<DeepLink<R>>()
+                        .ohos_window_current
+                        .lock()
+                        .unwrap()
+                        .remove(&window_id);
+                    tracing::info!(
+                        "[deep-link] per-window memo removed: label={label} window_id={window_id}"
+                    );
+                }
             }
         })
         .build()

@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: MIT
 
 //! OpenHarmony-specific implementation for the process plugin.
+//! The module is only compiled on OHOS (see the `mod ohos;` gate in lib.rs).
+
+/// Minimum API level for `ApplicationContext.restartApp()`.
+const MIN_RESTART_API_VERSION: i32 = 12;
 
 use std::time::Duration;
 
@@ -45,8 +49,19 @@ fn bridge_process() -> Option<Process> {
 /// After dispatching `restartApp` to the main thread, this command blocks
 /// forever, same pattern as the non-OHOS restart path (let the runtime
 /// terminate us).
+///
+/// On API levels below 12, returns an error naming the required API level
+/// (`ApplicationContext.restartApp` is API 12+).
 #[tauri::command]
-pub async fn restart<R: Runtime>(_app: AppHandle<R>) {
+pub async fn restart<R: Runtime>(
+    _app: AppHandle<R>,
+) -> std::result::Result<(), String> {
+    let current = openharmony_ability::version::sdk_api_version();
+    if current < MIN_RESTART_API_VERSION {
+        return Err(format!(
+            "restart requires API level {MIN_RESTART_API_VERSION}+ on OpenHarmony (current: {current})"
+        ));
+    }
     let dispatched = match bridge_process() {
         Some(process) => match process.restart().await {
             Ok(0) => true,

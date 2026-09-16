@@ -15,7 +15,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "none", notes = "" }
 ios = { level = "none", notes = "" }
-openharmony = { level = "full", notes = "exit() supported; restart() dispatches appRecovery.restartApp() (hard kill, onDestroy not fired)" }
+openharmony = { level = "full", notes = "exit() supported; restart() dispatches appRecovery.restartApp() (API 12+; hard kill, onDestroy not fired)" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }

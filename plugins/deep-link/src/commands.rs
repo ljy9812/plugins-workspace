@@ -9,10 +9,12 @@ use crate::{DeepLink, Result};
 #[command]
 pub(crate) async fn get_current<R: Runtime>(
     _app: AppHandle<R>,
-    _window: Window<R>,
+    window: Window<R>,
     deep_link: State<'_, DeepLink<R>>,
 ) -> Result<Option<Vec<url::Url>>> {
-    deep_link.get_current()
+    // OpenHarmony: resolves the calling window's UIAbility instance so each
+    // window surfaces its own deep link (design.md D9).
+    deep_link.get_current_for_window(&window)
 }
 
 #[command]

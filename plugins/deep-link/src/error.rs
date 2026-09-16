@@ -10,6 +10,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("unsupported platform")]
     UnsupportedPlatform,
+    #[cfg(target_env = "ohos")]
+    #[error("{0}")]
+    UnsupportedOnOpenHarmony(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

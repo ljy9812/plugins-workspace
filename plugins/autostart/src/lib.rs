@@ -112,7 +112,26 @@ impl AutoLaunchManager {
             .map_err(|e| Error::Anyhow(e.to_string()))
     }
 
+    /// Queries whether autostart is enabled for this application.
+    ///
+    /// Requires API 21+ on OpenHarmony (`autoStartupManager.getAutoStartupStatusForSelf()`).
+    /// On lower API levels, returns an error naming the required API level.
+    /// `enable` / `disable` are unaffected — they open the system settings page
+    /// (`startAbility`, available from API 12+).
     pub async fn is_enabled(&self) -> Result<bool> {
+        // autoStartupManager.getAutoStartupStatusForSelf is API 21+; below that
+        // the facade fabricates nothing — report the unified version error here
+        // so the JS side sees the clean message (the facade gate would surface
+        // as "GenericFailure, ..." through the Display round-trip below).
+        use openharmony_ability_plugin_autostart::version;
+
+        const MIN_AUTOSTART_API_VERSION: i32 = 21;
+        let current = version::sdk_api_version();
+        if current < MIN_AUTOSTART_API_VERSION {
+            return Err(Error::Anyhow(format!(
+                "isEnabled requires API level {MIN_AUTOSTART_API_VERSION}+ on OpenHarmony (current: {current})"
+            )));
+        }
         self.0
             .is_enabled()
             .await

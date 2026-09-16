@@ -90,6 +90,13 @@ impl TryFrom<&str> for ShortcutWrapper {
 struct RegisteredShortcut<R: Runtime> {
     shortcut: Shortcut,
     handler: Option<Arc<HandlerFn<R>>>,
+    /// OHOS: monotonic registration stamp. The entry is inserted
+    /// synchronously and removed from a worker thread when ArkTS rejects the
+    /// request; the stamp makes that removal conditional so a same-id
+    /// re-registration that already replaced the entry is not undone by the
+    /// stale worker of the earlier attempt.
+    #[cfg(target_env = "ohos")]
+    stamp: u64,
 }
 
 // ─── Platform-specific GlobalHotKeyManager ──────────────────────────────────
@@ -133,6 +140,23 @@ fn lock_shortcuts<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap()
 }
 
+/// Unified version gate for OHOS global shortcuts: `inputConsumer.on('hotkeyChange')`
+/// is API 14+. Every register/unregister/query entry point checks this up front so
+/// the caller gets an error naming the required API level instead of a silent no-op.
+#[cfg(target_env = "ohos")]
+fn ohos_require_hotkey_api(op: &str) -> Result<()> {
+    use openharmony_ability_plugin_global_shortcut::version;
+
+    const MIN_HOTKEY_API_VERSION: i32 = 14;
+    let current = version::sdk_api_version();
+    if current < MIN_HOTKEY_API_VERSION {
+        return Err(Error::GlobalHotkey(format!(
+            "{op} requires API level {MIN_HOTKEY_API_VERSION}+ on OpenHarmony (current: {current})"
+        )));
+    }
+    Ok(())
+}
+
 impl<R: Runtime> GlobalShortcut<R> {
     fn register_internal<F: Fn(&AppHandle<R>, &Shortcut, ShortcutEvent) + Send + Sync + 'static>(
         &self,
@@ -142,9 +166,14 @@ impl<R: Runtime> GlobalShortcut<R> {
         let id = shortcut.id();
         let handler = handler.map(|h| Arc::new(Box::new(h) as HandlerFn<R>));
 
+        #[cfg(target_env = "ohos")]
+        ohos_require_hotkey_api("register")?;
+
         #[cfg(not(target_env = "ohos"))]
         {
             run_main_thread!(self.app, self.manager, |m| m.0.register(shortcut.clone()))?;
+            lock_shortcuts(&self.shortcuts)
+                .insert(id, RegisteredShortcut { shortcut, handler });
         }
 
         #[cfg(target_env = "ohos")]
@@ -152,15 +181,40 @@ impl<R: Runtime> GlobalShortcut<R> {
             let client = self.client.as_ref().ok_or_else(|| {
                 Error::GlobalHotkey("GlobalShortcutClient not initialized".to_string())
             })?;
+            let modifiers = shortcut.modifiers().to_vec();
+            let key = shortcut.code().to_ohos_name().to_string();
+            // Insert synchronously (a hotkey that fires immediately must find
+            // its handler); if ArkTS later rejects the registration, the
+            // spawned call removes the entry again so `isRegistered` cannot
+            // report a ghost registration — unless the same id was
+            // re-registered in between (the stamp makes the removal
+            // generation-aware). The stamp is taken under the same lock as
+            // the insert so two racing registrations of the same id cannot
+            // leave the older attempt's stamp in the map (its worker would
+            // then remove the newer registration).
+            let stamp = {
+                let mut shortcuts = lock_shortcuts(&self.shortcuts);
+                let stamp = ohos::next_registration_stamp();
+                shortcuts.insert(
+                    id,
+                    RegisteredShortcut {
+                        shortcut,
+                        handler,
+                        stamp,
+                    },
+                );
+                stamp
+            };
             ohos::spawn_register(
                 client.clone(),
                 id,
-                shortcut.modifiers(),
-                shortcut.code().to_ohos_name(),
+                &modifiers,
+                &key,
+                stamp,
+                self.shortcuts.clone(),
             );
         }
 
-        lock_shortcuts(&self.shortcuts).insert(id, RegisteredShortcut { shortcut, handler });
         Ok(())
     }
 
@@ -171,6 +225,9 @@ impl<R: Runtime> GlobalShortcut<R> {
     {
         let handler = handler.map(|h| Arc::new(Box::new(h) as HandlerFn<R>));
 
+        #[cfg(target_env = "ohos")]
+        ohos_require_hotkey_api("register")?;
+
         let hotkeys = shortcuts.into_iter().collect::<Vec<_>>();
 
         let mut shortcuts = lock_shortcuts(&self.shortcuts);
@@ -180,16 +237,26 @@ impl<R: Runtime> GlobalShortcut<R> {
                 run_main_thread!(self.app, self.manager, |m| m.0.register(shortcut.clone()))?;
             }
 
+            // Stamp before dispatch so the insert below and the spawned
+            // removal check agree on the registration generation.
+            #[cfg(target_env = "ohos")]
+            let stamp = ohos::next_registration_stamp();
+
             #[cfg(target_env = "ohos")]
             {
-                if let Some(ref client) = self.client {
-                    ohos::spawn_register(
-                        client.clone(),
-                        shortcut.id(),
-                        shortcut.modifiers(),
-                        shortcut.code().to_ohos_name(),
-                    );
-                }
+                let client = self.client.as_ref().ok_or_else(|| {
+                    Error::GlobalHotkey("GlobalShortcutClient not initialized".to_string())
+                })?;
+                let modifiers = shortcut.modifiers().to_vec();
+                let key = shortcut.code().to_ohos_name().to_string();
+                let sid = shortcut.id();
+                let client = client.clone();
+                // If ArkTS rejects the registration, the spawned call removes
+                // the entry this loop inserts below so `isRegistered` cannot
+                // report a ghost registration. This loop holds the lock, so the
+                // removal can only run after every insert has completed; the
+                // stamp keeps a stale worker from removing a re-registered id.
+                ohos::spawn_register(client, sid, &modifiers, &key, stamp, self.shortcuts.clone());
             }
 
             shortcuts.insert(
@@ -197,6 +264,8 @@ impl<R: Runtime> GlobalShortcut<R> {
                 RegisteredShortcut {
                     shortcut,
                     handler: handler.clone(),
+                    #[cfg(target_env = "ohos")]
+                    stamp,
                 },
             );
         }
@@ -262,6 +331,9 @@ impl<R: Runtime> GlobalShortcut<R> {
     where
         S::Error: std::error::Error,
     {
+        #[cfg(target_env = "ohos")]
+        ohos_require_hotkey_api("unregister")?;
+
         let shortcut = try_into_shortcut(shortcut)?;
 
         #[cfg(not(target_env = "ohos"))]
@@ -288,6 +360,9 @@ impl<R: Runtime> GlobalShortcut<R> {
     where
         T::Error: std::error::Error,
     {
+        #[cfg(target_env = "ohos")]
+        ohos_require_hotkey_api("unregister")?;
+
         let mut mapped_shortcuts = Vec::new();
         for shortcut in shortcuts {
             mapped_shortcuts.push(try_into_shortcut(shortcut)?);
@@ -319,6 +394,9 @@ impl<R: Runtime> GlobalShortcut<R> {
 
     /// Unregister all registered shortcuts.
     pub fn unregister_all(&self) -> Result<()> {
+        #[cfg(target_env = "ohos")]
+        ohos_require_hotkey_api("unregisterAll")?;
+
         let mut shortcuts = lock_shortcuts(&self.shortcuts);
         let hotkeys = std::mem::take(&mut *shortcuts);
 
@@ -345,13 +423,12 @@ impl<R: Runtime> GlobalShortcut<R> {
     /// If the shortcut is registered by another application, it will still return `false`.
     ///
     /// # OHOS note
-    /// Registration is fire-and-forget: `register()` returns immediately after
+    /// Registration is asynchronous: `register()` returns immediately after
     /// queueing the request, while the actual `inputConsumer.on()` call happens
     /// asynchronously on the ArkTS main thread. This function queries the local
-    /// `shortcuts` map, so it may return `true` before the ArkTS registration
-    /// has completed (or even if ArkTS registration ultimately fails). Blocking
-    /// to wait for confirmation would risk a deadlock with the main thread, so
-    /// this timing gap is an accepted trade-off.
+    /// `shortcuts` map, so it may return `true` briefly before the ArkTS
+    /// registration completes. If ArkTS rejects the registration, the entry is
+    /// removed again, so subsequent calls report `false`.
     pub fn is_registered<S: TryInto<ShortcutWrapper>>(&self, shortcut: S) -> bool
     where
         S::Error: std::error::Error,
@@ -463,6 +540,9 @@ fn is_registered<R: Runtime>(
     global_shortcut: State<'_, GlobalShortcut<R>>,
     shortcut: String,
 ) -> Result<bool> {
+    #[cfg(target_env = "ohos")]
+    ohos_require_hotkey_api("isRegistered")?;
+
     Ok(global_shortcut.is_registered(parse_shortcut(shortcut)?))
 }
 

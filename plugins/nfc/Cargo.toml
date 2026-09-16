@@ -17,7 +17,7 @@ linux = { level = "none", notes = "" }
 macos = { level = "none", notes = "" }
 android = { level = "full", notes = "" }
 ios = { level = "full", notes = "" }
-openharmony = { level = "partial", notes = "isAvailable only; scan/write reject — tag discovery is app-level integration (background: ohos.nfc.tag.action.TAG_FOUND dispatch; foreground: tag readerMode)" }
+openharmony = { level = "partial", notes = "is_available/scan/write via NFC readerMode foreground dispatch (Android Session semantics); mimeType/uri scan filters have no platform equivalent and are ignored; Rust-side Nfc::scan()/write() hit an upstream models deserialization bug — use the JS plugin API on all platforms" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }

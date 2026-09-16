@@ -142,6 +142,75 @@ await stronghold.save();
 await store.remove(key);
 ```
 
+## OHOS Build
+
+Stronghold depends on `libsodium-sys-stable`, whose build script runs `./configure`
+to compile libsodium from source. On Windows cross-compiling to OHOS,
+`./configure` cannot run (os error 193), so a prebuilt libsodium is required.
+On an OHOS PC the automatic source build works without any setup.
+
+### Prerequisites
+
+- A prebuilt `libsodium` for `aarch64-unknown-linux-ohos`. Sources:
+  - OHOS PC Conan registry (`OpenHarmonyPCDeveloper/Conan`) or `cmd-pkgs` releases
+  - Built once on an OHOS PC, or with the OHOS NDK clang: `./configure --host=aarch64-linux-ohos && make`
+- When cross-compiling **from Windows**, additionally copy (or symlink) the
+  static library to the Unix linker name in the same directory:
+
+  ```bash
+  cp libsodium.a liblibsodium.a
+  ```
+
+  `libsodium-sys-stable`'s build script picks the link name with
+  `cfg!(target_env = "msvc")`, which reflects the *host* (Windows → `libsodium`),
+  while the Unix-flavored OHOS *target* resolves `-l libsodium` to
+  `liblibsodium.a`. Both names must exist. This is not needed on an OHOS PC,
+  where the host already picks the `sodium` name.
+
+### Steps
+
+1. Point `SODIUM_LIB_DIR` at the directory containing `libsodium.a`
+   (and its `liblibsodium.a` copy when cross-compiling from Windows):
+
+   ```bash
+   export SODIUM_LIB_DIR=/path/to/libsodium/lib
+   ```
+
+   `libsodium-sys-stable` picks the env var up directly and skips `./configure`.
+   The plugin's `build.rs` fails fast with a hint when it is missing.
+
+2. Build the plugin:
+
+   ```bash
+   cargo check -p tauri-plugin-stronghold --target aarch64-unknown-linux-ohos
+   ```
+
+The `stronghold-runtime` crate is consumed from the OpenHarmony Artifactory
+cargo registry: the workspace `.cargo/config.toml` replaces crates.io with
+the artifactory, which serves the OHOS adaptation — excluding the `nix`
+dependency for OHOS and fixing a `DirectAlloc` misaligned-offset panic —
+under the same version `2.0.1` with an adapted checksum (locally published
+builds win over the registry's crates.io remote fallback), so no patch
+entry is needed. If you consume this plugin in your own project, configure
+the same source replacement (or otherwise point your build at the
+artifactory) — without it the unadapted crates.io build of
+`stronghold-runtime` pulls `nix` into the OHOS dependency graph. Remove the
+replacement once upstream stronghold.rs ships an OHOS-compatible release.
+The reference source of the adaptation is the `ohos` branch of the public
+fork at <https://gitcode.com/dragonswordy/stronghold.rs>.
+
+### Runtime notes
+
+- The first snapshot `save()` and every snapshot load run scrypt at upstream's
+  recommended work factor 19 (≈2^19 iterations). Measured on an aarch64
+  HarmonyOS PC (debug build) this costs ≈107 s per call; release builds are
+  expected to be in the ~1 s range per upstream's design. The cost is
+  password hardening by design, not an OHOS regression. The full plugin chain
+  (key provider, BIP39/SLIP-10/Ed25519
+  procedures, vault + store, snapshot round-trip, wrong-password rejection) is
+  verified end-to-end on an aarch64 HarmonyOS PC by
+  `tests/ohos_e2e.rs`.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
