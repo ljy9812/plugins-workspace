@@ -126,17 +126,25 @@ variants) open the parent directory with an **implicit** `startAbility` Want:
 (`file://docs/storage/Users/currentUser/<virtualName>/...`, where the
 public-directory prefix's top-level directory is mapped to a virtual name
 inside the URI value) — plus `want.parameters.external_storage_uuid = "LOCAL"`
-(the local disk id) and the `FLAG_AUTH_READ_URI_PERMISSION` flag. No bundle
-name or ability name is hardcoded: the system resolves the handler for the
-implicit Want. Consequences:
+(the local disk id). No flags are set, and no bundle, ability, or module name
+is hardcoded: the system resolves the handler for the implicit Want.
+Consequences:
 
-- Which handlers actually declare matching skills for this Want has not been
-  verified yet (a `bm dump` device round of the file manager's skills is
-  pending), so the resolved handler is not guaranteed to be the built-in file
-  manager on any given device. When no handler matches the Want,
-  `startAbility` fails with error `16000019` ("No matching ability is found",
-  `UIAbilityContext.d.ts`) and the plugin surfaces a clear "reveal is not
-  supported" error to the caller — there is no fallback.
+- The resolved handler is not guaranteed to be the built-in file manager on
+  any given device. When no handler matches the Want, `startAbility` fails
+  with error `16000019` ("No matching ability is found") or `16000001` ("The
+  specified ability does not exist", both per `UIAbilityContext.d.ts`) and
+  the plugin surfaces a clear "reveal is not supported" error to the caller
+  — there is no fallback. A `16000011` failure ("The context does not
+  exist") is a destroyed calling context and surfaces as a context error,
+  not as "unsupported".
+- Resolution boundary (2026-11-25 2in1 device round, after the 2026-11-24
+  system update): when the implicit `viewData` Want matches several
+  handlers, the system AppSelector may surface an application picker
+  instead of going straight to the file manager; picking a non-file-manager
+  handler does not reveal anything. This is the platform's resolution
+  behavior and is disclosed rather than worked around by re-pinning a
+  vendor package.
 - Historical risk note (2026-08-28 2in1 device experiment): a bare
   `viewData` + `file://` Want **without** the parameter contract above only
   matched archive UTD types and silently opened the notepad handler instead

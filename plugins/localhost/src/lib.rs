@@ -110,10 +110,20 @@ impl Builder {
                 // second instance while the dying predecessor still holds the
                 // port (EADDRINUSE / os error 98) — its sockets close once the
                 // process is reaped, typically within seconds. Retrying only
-                // AddrInUse with a short backoff rides that race out; any
-                // other bind error, or a port still occupied after the
-                // deadline, fails setup exactly as before (fail-fast contract
-                // preserved for real misconfig such as a squatted port).
+                // AddrInUse with a 250ms backoff rides that race out. The
+                // failure OUTCOME is unchanged (any other bind error, or a
+                // port still occupied after the 10s deadline, fails setup),
+                // but the timing is not: every AddrInUse retries ~40 times
+                // over the deadline, so a genuinely squatted port also waits
+                // out the full window before the failure surfaces — this is
+                // NOT fail-fast for that case. The retry loop runs
+                // synchronously on the OHOS startup main thread (it has to,
+                // to be able to fail setup), an accepted startup-blocking
+                // tradeoff: the common case binds immediately, the race case
+                // frees the port within seconds, and only a real squatter
+                // pays the full 10s (an appfreeze/watchdog risk worth its
+                // rarity — failing the relaunch outright would instead break
+                // every AMS restart).
                 #[cfg(target_env = "ohos")]
                 let bind_addr = format!("127.0.0.1:{}", port);
                 #[cfg(target_env = "ohos")]
@@ -136,13 +146,17 @@ impl Builder {
                             {
                                 if std::time::Instant::now() >= deadline {
                                     return Err(format!(
-                                        "[localhost plugin] failed to bind {}: {} (still occupied after 10s)",
+                                        "[localhost plugin] failed to bind {}: {} (still occupied after 10s — the AMS restart race should have cleared by now; check whether another process squats the port)",
                                         bind_addr, e
                                     )
                                     .into());
                                 }
+                                // AddrInUse alone cannot distinguish the
+                                // restart race from a squatter — do not
+                                // attribute; the deadline message above
+                                // carries the diagnosis.
                                 log::warn!(
-                                    "[localhost plugin] {} occupied by a dying predecessor; retrying",
+                                    "[localhost plugin] bind failed with AddrInUse on {}; retrying",
                                     bind_addr
                                 );
                                 std::thread::sleep(std::time::Duration::from_millis(250));

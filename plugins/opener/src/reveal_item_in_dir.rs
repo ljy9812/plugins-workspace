@@ -83,12 +83,13 @@ where
 /// directory URI in `want.parameters.fileUri` (a file-manager virtual URI
 /// where the public-directory prefix's top-level directory is mapped to a
 /// virtual name inside the URI value; `want.parameters.external_storage_uuid`
-/// is the constant `"LOCAL"`, the local disk id) and the
-/// `FLAG_AUTH_READ_URI_PERMISSION` flag — and lets the system resolve the
-/// handler; no bundle name is hardcoded. When no handler matches the Want,
-/// `startAbility` fails with error 16000019 ("No matching ability is found")
-/// and the plugin surfaces a clear "reveal is not supported" error to the
-/// caller.
+/// is the constant `"LOCAL"`, the local disk id) and NO flags set — and lets
+/// the system resolve the handler; no bundle, ability, or module name is
+/// hardcoded. When no handler matches the Want, `startAbility` fails with
+/// error 16000019 or 16000001 ("No matching ability is found" / "The
+/// specified ability does not exist") and the plugin surfaces a clear
+/// "reveal is not supported" error to the caller; a 16000011 failure is a
+/// destroyed calling context and surfaces as a context error instead.
 #[cfg(target_env = "ohos")]
 pub async fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
     reveal_items_in_dir(std::iter::once(path)).await
@@ -145,13 +146,16 @@ mod imp {
                 .ok_or_else(|| crate::Error::NoParent(path.to_path_buf()))?;
             // Pass the REAL filesystem path of the parent directory. The ArkTS
             // side (UrlPlugin.ets) maps it to the directory URI carried in
-            // want.parameters.fileUri (with the public-prefix virtual-name
-            // mapping in external_storage_uuid) and starts an implicit
-            // viewData Want — the system resolves the handler, no bundle
-            // name is hardcoded. Sandbox/unmappable-prefix detection is done
-            // ArkTS-side (it owns OHOS sandbox layout knowledge) and surfaces
-            // as a documented error; a Want matching no handler surfaces as
-            // "reveal is not supported" (startAbility error 16000019).
+            // want.parameters.fileUri (the public-prefix top-level directory
+            // is mapped to the virtual name INSIDE that URI value; the
+            // separate want.parameters.external_storage_uuid is the constant
+            // "LOCAL", the local disk id) and starts an implicit viewData
+            // Want with NO flags — the system resolves the handler, no
+            // bundle/ability/module name is hardcoded. Sandbox/unmappable-prefix
+            // detection is done ArkTS-side (it owns OHOS sandbox layout
+            // knowledge) and surfaces as a documented error; a Want matching
+            // no handler surfaces as "reveal is not supported" (startAbility
+            // error 16000019/16000001).
             use openharmony_ability_plugin_url::UrlExt;
             let ohos_app = crate::ohos_app()?;
             ohos_app

@@ -83,12 +83,12 @@ export async function openPath(path: string, openWith?: string): Promise<void> {
  * - **Android / iOS:** Unsupported.
  * - **HarmonyOS (OHOS):** Opens the parent directory via an implicit
  *   `startAbility` Want (`ohos.want.action.viewData` + the directory URI +
- *   `FLAG_AUTH_READ_URI_PERMISSION`); the system resolves the handler — no
- *   bundle name is hardcoded. The item itself cannot be highlighted,
+ *   the local disk id; no flags are set); the system resolves the handler —
+ *   no bundle name is hardcoded. The item itself cannot be highlighted,
  *   app-sandbox paths are rejected with a documented error, and when no
  *   handler matches the Want the plugin reports reveal as unsupported
- *   (startAbility error 16000019). See the README's "OpenHarmony (OHOS)
- *   Platform Notes" section.
+ *   (startAbility error 16000019/16000001). See the README's "OpenHarmony
+ *   (OHOS) Platform Notes" section.
  *
  * @example
  * ```typescript

@@ -86,8 +86,8 @@ On OpenHarmony, updates are handled through the system AppGallery — there is n
 
 | API | Behavior |
 | --- | -------- |
-| `check()` | Pure query via `updateManager.checkAppUpdate()`. No dialog shown. Returns `null` if no update, or an `Update` object with metadata. |
-| `downloadAndInstall()` | Triggers `updateManager.showUpdateDialog()` — the system dialog drives the entire download and install flow. |
+| `check()` | Pure query via `updateManager.checkAppUpdate()`. No dialog shown. Returns `null` if no update, or an `Update` object with metadata. The desktop `CheckOptions` (headers/timeout/proxy/target/allowDowngrades) are ignored — AppGallery is the update source. |
+| `downloadAndInstall()` | Triggers `updateManager.showUpdateDialog()` — the system dialog drives the entire download and install flow. Whether to proceed is decided by the user, so the promise resolving does not mean the update was installed. The desktop progress events (`onEvent`) have no source in this flow and are never emitted. |
 | `download()` | Returns `UnsupportedPlatform` error. Use `downloadAndInstall()` instead. |
 | `install()` | Returns `UnsupportedPlatform` error. Use `downloadAndInstall()` instead. |
 
@@ -95,6 +95,7 @@ On OpenHarmony, updates are handled through the system AppGallery — there is n
 
 - `body` and `date` fields are always `null` on OHOS — the AppGallery API does not expose update notes or release dates.
 - On SDK 12 / API < 20, `CheckUpdateResult.versionName` is not available, so the `version` field will be `"unknown"`. Upgrade to API 20+ for proper version reporting.
+- The `Update` object returned by `check()` carries a placeholder `rid` of `0` — there is no desktop-style download resource behind it. Calling `close()` on it dispatches a resources close for rid 0, which the resources layer rejects as `BadResourceId` (harmless; real resource ids are randomly assigned, so rid 0 never belongs to a real resource in practice).
 - The `ohos.permission.GET_BUNDLE_INFO` permission is required (for `bundleManager.getBundleInfoForSelf`). It is auto-added to the `module.json5` template by `tauri init`; for existing projects, add it manually.
 - `check()` is side-effect free — it does not show any UI. Use `downloadAndInstall()` to present the system update dialog to the user.
 

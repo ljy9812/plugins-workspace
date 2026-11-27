@@ -17,7 +17,7 @@ linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
 android = { level = "partial", notes = "Only allows to open URLs via `open`" }
 ios = { level = "partial", notes = "Only allows to open URLs via `open`" }
-openharmony = { level = "partial", notes = "Opens URLs/paths with the system default application only (`with`/`inAppBrowser` unsupported); reveal opens the first item's parent directory via an implicit `ohos.want.action.viewData` Want (system-resolved handler, no hardcoded bundle name; no matching handler reports reveal as unsupported, startAbility 16000019) — see README for limitations." }
+openharmony = { level = "partial", notes = "Opens URLs/paths with the system default application only (`with`/`inAppBrowser` unsupported); reveal opens the first item's parent directory via an implicit `ohos.want.action.viewData` Want (system-resolved handler, no hardcoded bundle/ability/module name and no flags; no matching handler reports reveal as unsupported, startAbility 16000019/16000001) — see README for limitations." }
 
 
 [build-dependencies]

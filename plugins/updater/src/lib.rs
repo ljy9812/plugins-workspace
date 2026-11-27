@@ -13,18 +13,18 @@
 
 // ── Desktop-only imports ─────────────────────────────────────────────
 #[cfg(not(target_env = "ohos"))]
-use std::{ffi::OsString, sync::Arc};
-#[cfg(not(target_env = "ohos"))]
 use http::{HeaderMap, HeaderName, HeaderValue};
 #[cfg(not(target_env = "ohos"))]
 use semver::Version;
+#[cfg(not(target_env = "ohos"))]
+use std::{ffi::OsString, sync::Arc};
 
+#[cfg(not(target_env = "ohos"))]
+use tauri::Manager;
 use tauri::{
     plugin::{Builder as PluginBuilder, TauriPlugin},
     Runtime,
 };
-#[cfg(not(target_env = "ohos"))]
-use tauri::Manager;
 
 // ── Module declarations ──────────────────────────────────────────────
 // Desktop: the original HTTP/manifest-based updater (untouched).
@@ -275,17 +275,24 @@ impl Builder {
             .build()
     }
 
-    // ── OHOS build: registers AppGallery-backed commands only ────────
-    // The desktop download commands (download/install/download_and_install)
-    // are intentionally NOT registered on OHOS — updates are AppGallery-owned
-    // and the desktop API contract (resolve = installed, progress channel)
-    // cannot be honored. OHOS aligns with the upstream android/ios stance for
-    // those; the download flow is `showAppGalleryUpdateDialog`.
+    // ── OHOS build: registers AppGallery-backed commands + stubs ─────
+    // Updates are AppGallery-owned, so the desktop download commands are
+    // NOT silently absent on OHOS:
+    // - `download` / `install` are explicit UnsupportedPlatform stubs (the
+    //   desktop API contract — resolve = installed, progress channel —
+    //   cannot be honored);
+    // - `download_and_install` routes to the AppGallery system dialog, the
+    //   platform's only sanctioned update flow (same bridge call as
+    //   `show_app_gallery_update_dialog`).
+    // Registering them matters: the cross-platform JS methods invoke
+    // `plugin:updater|download` etc.; without a Rust handler they fall
+    // through to the ArkTS plugin layer — which has no `updater` module —
+    // and die as "Plugin not found: updater", an error that says nothing
+    // about the actual limitation.
     //
     // `check` IS registered (AppGallery-backed): it honors the query half of
     // the desktop contract — `null` when no update is available — so the
-    // cross-platform JS `check()` works. Without it, the JS call has no Rust
-    // handler and dies at the ArkTS plugin layer ("Plugin not found: updater").
+    // cross-platform JS `check()` works.
     #[cfg(target_env = "ohos")]
     pub fn build<R: Runtime>(self) -> TauriPlugin<R, Config> {
         PluginBuilder::<R, Config>::new("updater")
@@ -293,6 +300,9 @@ impl Builder {
                 ohos::check,
                 ohos::check_app_gallery_update,
                 ohos::show_app_gallery_update_dialog,
+                ohos::download,
+                ohos::install,
+                ohos::download_and_install,
             ])
             .setup(move |_app, _api| {
                 // Register the Rust-side bridge plugin (UpdaterBridgePlugin, id
@@ -307,10 +317,7 @@ impl Builder {
                 if let Ok(guard) = tauri::ohos::APP.lock() {
                     if let Some(ohos_app) = guard.as_ref() {
                         if let Err(e) = ohos_app.register_plugin(UpdaterBridgePlugin) {
-                            log::error!(
-                                "[updater] failed to register UpdaterBridgePlugin: {}",
-                                e
-                            );
+                            log::error!("[updater] failed to register UpdaterBridgePlugin: {}", e);
                         }
                     }
                 }

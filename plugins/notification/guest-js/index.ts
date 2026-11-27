@@ -120,7 +120,9 @@ interface Options {
    * (app `resources/rawfile` directory), then as a file path or `file://`
    * URI. Sources that fail to resolve or decode, and images whose pixel
    * bytes exceed the system limit (192 KB), are dropped with a warning —
-   * the notification still fires, just without the icon.
+   * the notification still fires, just without the icon. Immediate-publish
+   * path only: a `schedule` that defers drops this field (the system
+   * reminder carries only title/body/id/slot type).
    */
   icon?: string
   /**
@@ -132,6 +134,8 @@ interface Options {
    * image.PixelMap). Resolution and degradation behave exactly like
    * {@link Options.icon} (rawfile name first, then path/`file://` URI;
    * undecodable or oversized sources are dropped with a warning).
+   * Immediate-publish path only: a `schedule` that defers drops this
+   * field (the system reminder carries only title/body/id/slot type).
    */
   largeIcon?: string
   /**
@@ -146,14 +150,18 @@ interface Options {
   /**
    * Notification attachments.
    *
-   * On OHOS: the first attachment that decodes switches the notification to
-   * the system picture layout (NOTIFICATION_CONTENT_PICTURE) — the picture
-   * is shown when the notification is expanded, and it replaces the
-   * basic/long-text/multiline layout. Later attachments are ignored.
-   * Attachment URLs are resolved as file paths or `file://` URIs (the
-   * `asset` protocol is not readable from the notification plugin). If no
-   * attachment decodes, or the image exceeds the system limit (2 MB pixel
-   * bytes), the notification keeps its regular layout.
+   * On OHOS: attachments are tried in order and the first one that decodes
+   * switches the notification to the system picture layout
+   * (NOTIFICATION_CONTENT_PICTURE) — the picture is shown when the
+   * notification is expanded, and it replaces the basic/long-text/multiline
+   * layout. An attachment that fails to resolve or decode, or exceeds the
+   * system limit (2 MB pixel bytes), is skipped and the next one is tried;
+   * after a success the later ones are ignored. Attachment URLs are
+   * resolved as file paths or `file://` URIs (the `asset` protocol is not
+   * readable from the notification plugin). If no attachment decodes, the
+   * notification keeps its regular layout. Immediate-publish path only: a
+   * `schedule` that defers drops this field (the system reminder carries
+   * only title/body/id/slot type).
    */
   attachments?: Attachment[]
   /**
